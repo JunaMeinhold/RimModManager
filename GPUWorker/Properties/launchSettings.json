@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "GPUWorker": {
+      "commandName": "Project",
+      "commandLineArgs": "localhost 22984"
+    }
+  }
+}
