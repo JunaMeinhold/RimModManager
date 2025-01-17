@@ -10,6 +10,20 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <None Remove="assets\fonts\arialuni.ttf" />
+	  <None Remove="assets\fonts\fa-brands-400.ttf" />
+	  <None Remove="assets\fonts\fa-regular-400.ttf" />
+	  <None Remove="assets\fonts\fa-solid-900.ttf" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <EmbeddedResource Include="assets\fonts\arialuni.ttf" />
+	  <EmbeddedResource Include="assets\fonts\fa-brands-400.ttf" />
+	  <EmbeddedResource Include="assets\fonts\fa-regular-400.ttf" />
+	  <EmbeddedResource Include="assets\fonts\fa-solid-900.ttf" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="Hexa.NET.KittyUI" Version="1.1.2-rc8" />
 	</ItemGroup>
 

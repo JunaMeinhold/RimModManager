@@ -1,6 +1,7 @@
 ﻿namespace RimModManager.RimWorld
 {
     using Hexa.NET.Logging;
+    using RimModManager.RimWorld.Fluffy;
 
     public class RimModLoader
     {
@@ -40,13 +41,15 @@
                 foreach (var modFolder in Directory.GetDirectories(folderPath))
                 {
                     var modMetadata = LoadModMetadata(modFolder);
+                    var modManifest = LoadFluffyModManifest(modFolder);
                     if (modMetadata != null)
                     {
                         var mod = new RimMod
                         {
                             Kind = modKind,
                             Path = modFolder,
-                            Metadata = modMetadata
+                            Metadata = modMetadata,
+                            FluffyManifest = modManifest,
                         };
                         if (modKind == ModKind.Steam && long.TryParse(Path.GetFileName(modFolder.AsSpan()), out var steamId))
                         {
@@ -72,7 +75,27 @@
                 }
                 catch (Exception ex)
                 {
-                    LoggerFactory.General.Fail($"Failed to parse mod '{modFolderPath}'");
+                    LoggerFactory.General.Fail($"Failed to parse mod About.xml '{modFolderPath}'");
+                    LoggerFactory.General.Log(ex);
+                }
+            }
+
+            return null;
+        }
+
+        private static FluffyModManifest? LoadFluffyModManifest(string modFolderPath)
+        {
+            string fluffyManifest = Path.Combine(modFolderPath, "About", "Manifest.xml");
+
+            if (File.Exists(fluffyManifest))
+            {
+                try
+                {
+                    return FluffyModManifest.Parse(fluffyManifest);
+                }
+                catch (Exception ex)
+                {
+                    LoggerFactory.General.Fail($"Failed to parse mod Manifest.xml '{modFolderPath}'");
                     LoggerFactory.General.Log(ex);
                 }
             }

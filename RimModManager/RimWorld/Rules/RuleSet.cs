@@ -85,7 +85,7 @@
             {
                 foreach (var before in rule.LoadBefore)
                 {
-                    yield return ModReference.BuildRef(before.Key, packageIdToMod, true, false, false);
+                    yield return ModReference.BuildRef(before.Key, packageIdToMod, ModReferenceDirection.LoadBefore, false);
                 }
             }
         }
@@ -96,7 +96,7 @@
             {
                 foreach (var before in rule.LoadAfter)
                 {
-                    yield return ModReference.BuildRef(before.Key, packageIdToMod, false, true, false);
+                    yield return ModReference.BuildRef(before.Key, packageIdToMod, ModReferenceDirection.LoadAfter, false);
                 }
             }
         }

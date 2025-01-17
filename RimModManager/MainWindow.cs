@@ -3,9 +3,11 @@
     using Hexa.NET.ImGui;
     using Hexa.NET.ImGui.Widgets;
     using Hexa.NET.KittyUI.Graphics;
+    using Hexa.NET.KittyUI.ImGuiBackend;
     using Hexa.NET.Mathematics;
     using Hexa.NET.Utilities.Text;
     using RimModManager.RimWorld;
+    using RimModManager.TextureOptimizer;
     using System;
     using System.Collections.Generic;
     using System.Diagnostics;
@@ -14,31 +16,68 @@
 
     public class MainWindow : ImWindow
     {
-        private readonly RimModList mods;
-        private readonly ModsConfig modsConfig;
+        private readonly RimModManagerConfig config;
+        private RimModList? mods;
+        private ModsConfig? modsConfig;
         private RimMod? selectedMod;
 
+        private readonly Lock imageLock = new();
         private Image2D? previewImage;
 
         private float splitA = 600;
         private float splitB = 300;
 
-        private FilterState inactiveFilterState;
-        private FilterState activeFilterState;
+        private FilterState? inactiveFilterState;
+        private FilterState? activeFilterState;
+
+        private Task? refreshTask;
 
         public MainWindow()
         {
-            RimModManagerConfig config = new();
-            RimPathAutoDetector.Detect(config);
-
-            mods = RimModLoader.LoadMods(config);
-            modsConfig = ModsConfig.Load(config, mods);
-            modsConfig.CheckForProblems();
-
             Flags |= ImGuiWindowFlags.MenuBar;
+            config = RimModManagerConfig.Load(out var isNew);
+            if (isNew)
+            {
+                if (RimPathAutoDetector.Detect(config))
+                {
+                    config.Save();
+                }
+                else
+                {
+                    SelectPathDialog dialog = new(config);
+                    dialog.Show((s, r) => { Refresh(); });
+                }
+            }
+            else
+            {
+                if (!config.CheckPaths())
+                {
+                    if (RimPathAutoDetector.Detect(config))
+                    {
+                        config.Save();
+                    }
+                    else
+                    {
+                        SelectPathDialog dialog = new(config);
+                        dialog.Show((s, r) => { Refresh(); });
+                    }
+                }
+            }
+        }
 
-            inactiveFilterState = new(modsConfig.InactiveMods);
-            activeFilterState = new(modsConfig.ActiveMods);
+        private void Refresh()
+        {
+            if (refreshTask != null && !refreshTask.IsCompleted) return;
+            refreshTask = Task.Run(() =>
+            {
+                if (!config.CheckPaths()) return;
+                mods = RimModLoader.LoadMods(config);
+                modsConfig = ModsConfig.Load(config, mods);
+                modsConfig.CheckForProblems();
+
+                inactiveFilterState = new(modsConfig.InactiveMods);
+                activeFilterState = new(modsConfig.ActiveMods);
+            });
         }
 
         public RimMod? SelectedMod
@@ -46,24 +85,48 @@
             get => selectedMod;
             set
             {
-                selectedMod = value;
-                previewImage?.Dispose();
-                previewImage = null;
-                if (selectedMod != null && File.Exists(selectedMod.PreviewImagePath))
+                if (selectedMod == value)
                 {
-                    try
-                    {
-                        previewImage = Image2D.LoadFromFile(selectedMod.PreviewImagePath);
-                    }
-                    catch
-                    {
-                        previewImage = null;
-                    }
+                    return;
                 }
+
+                selectedMod = value;
+                Task.Run(() =>
+                {
+                    lock (imageLock)
+                    {
+                        previewImage?.Dispose();
+                        previewImage = null;
+                        if (selectedMod != null && File.Exists(selectedMod.PreviewImagePath))
+                        {
+                            try
+                            {
+                                previewImage = Image2D.LoadFromFile(selectedMod.PreviewImagePath);
+                            }
+                            catch
+                            {
+                                previewImage = null;
+                            }
+                        }
+                    }
+                });
             }
         }
 
         protected override string Name { get; } = "Main Window";
+
+        public override void Init()
+        {
+            Refresh();
+        }
+
+        public override void Dispose()
+        {
+            lock (imageLock)
+            {
+                previewImage?.Dispose();
+            }
+        }
 
         public override unsafe void DrawContent()
         {
@@ -71,38 +134,85 @@
 
             if (ImGui.BeginMenuBar())
             {
-                if (ImGui.MenuItem("Clear"u8))
-                {
-                    modsConfig.Clear();
-                }
-                if (ImGui.MenuItem("Restore"u8))
+                if (ImGui.MenuItem("File"u8))
                 {
                 }
-                if (ImGui.MenuItem("Sort"u8))
+                if (ImGui.MenuItem("Edit"u8))
                 {
-                    modsConfig.Sort();
                 }
-                if (ImGui.MenuItem("Save"u8))
+                if (ImGui.MenuItem("Textures"u8))
+                {
+                    WidgetManager.Register(new OptimizeTexturesWindow(config), true);
+                }
+                if (ImGui.MenuItem("Help"u8))
                 {
                 }
 
                 ImGui.EndMenuBar();
             }
 
+            var style = ImGui.GetStyle();
+            var height = ImGui.GetTextLineHeight() + style.FramePadding.Y * 2 + style.ItemSpacing.Y + style.FrameBorderSize * 2;
             if (ImGui.BeginChild("SidePanel"u8, new(splitA, 0), ImGuiChildFlags.None))
             {
-                DisplayInactive("##ModsPanel"u8, "Inactive"u8, new(splitB, 0));
-                ImGuiSplitter.VerticalSplitter("SplitB"u8, ref splitB);
-                DisplayActive("##LoadOrder"u8, "Active"u8, default);
+                var d = ImGui.GetContentRegionAvail();
+                DisplayInactive("##ModsPanel"u8, "Inactive"u8, new(splitB, -height));
+                ImGuiSplitter.VerticalSplitter("SplitB"u8, ref splitB, 0, float.MaxValue, -height);
+                DisplayActive("##LoadOrder"u8, "Active"u8, new(0, -height));
+
+                ImGui.BeginChild("dawd"u8);
+                byte* buffer = stackalloc byte[2048];
+                StrBuilder builder = new(buffer, 2048);
+
+                if (ImGui.Button(BuildLabel(builder, MaterialIcons.Refresh)))
+                {
+                    Refresh();
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Clear"u8))
+                {
+                    modsConfig?.Clear();
+                    RefreshUI();
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Restore"u8))
+                {
+                    Refresh();
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Sort"u8))
+                {
+                    modsConfig?.Sort();
+                    RefreshUI();
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Save"u8))
+                {
+                    modsConfig?.Save(config);
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Run"u8))
+                {
+                    config.LaunchGame();
+                }
+
+                ImGui.EndChild();
             }
             ImGui.EndChild();
+
             ImGuiSplitter.VerticalSplitter("SplitA"u8, ref splitA, 100, avail.X - 100);
-            DrawSelection(new(0, 0));
+            DrawSelection(new(0, 0), selectedMod);
         }
 
-        private void DrawSelection(Vector2 size)
+        private void RefreshUI()
         {
-            if (!ImGui.BeginChild("Selection"u8, size, ImGuiChildFlags.None))
+            inactiveFilterState?.Refresh();
+            activeFilterState?.Refresh();
+        }
+
+        private void DrawSelection(Vector2 size, RimMod? selectedMod)
+        {
+            if (!ImGui.BeginChild("Selection"u8, size, ImGuiChildFlags.None, ImGuiWindowFlags.HorizontalScrollbar))
             {
                 ImGui.EndChild();
                 return;
@@ -139,12 +249,19 @@
             ImGui.SameLine();
             ImGui.Text(selectedMod.PackageId);
 
+            ImGui.Separator();
+
+            if (selectedMod.Metadata.Description != null)
+            {
+                ImGui.Text(selectedMod.Metadata.Description);
+            }
+
             ImGui.EndChild();
         }
 
         private unsafe void DisplayInactive(ReadOnlySpan<byte> strId, ReadOnlySpan<byte> label, Vector2 size)
         {
-            if (!ImGui.BeginChild(strId, size))
+            if (!ImGui.BeginChild(strId, size) || inactiveFilterState == null)
             {
                 ImGui.EndChild();
                 return;
@@ -152,12 +269,14 @@
 
             byte* buffer = stackalloc byte[2048];
             StrBuilder builder = new(buffer, 2048);
-            BuildLabel(label, ref builder, inactiveFilterState.Mods.Count);
+            BuildLabel(label, ref builder, inactiveFilterState.Mods.TotalCount, inactiveFilterState.Mods.Count);
 
+            ImGuiManager.PushFont("FA");
             DrawFilterBar(strId, builder, inactiveFilterState);
 
             var avail = ImGui.GetContentRegionAvail();
             DisplayMods(strId, label, inactiveFilterState.Mods, avail);
+            ImGuiManager.PopFont();
             ImGui.EndChild();
         }
 
@@ -166,6 +285,7 @@
             builder.Reset();
             builder.Append(KindToIcon(state.Filter));
             builder.End();
+            ImGui.PushStyleColor(ImGuiCol.Text, KindToColor(state.Filter));
             if (ImGui.Button(builder))
             {
                 var filter = state.Filter;
@@ -179,6 +299,7 @@
                 }
                 state.Filter = filter;
             }
+            ImGui.PopStyleColor();
             ImGui.SameLine();
 
             var avail = ImGui.GetContentRegionAvail();
@@ -202,7 +323,7 @@
 
         private unsafe void DisplayActive(ReadOnlySpan<byte> strId, ReadOnlySpan<byte> label, Vector2 size)
         {
-            if (!ImGui.BeginChild(strId, size))
+            if (!ImGui.BeginChild(strId, size) || activeFilterState == null || modsConfig == null)
             {
                 ImGui.EndChild();
                 return;
@@ -210,8 +331,8 @@
 
             byte* buffer = stackalloc byte[2048];
             StrBuilder builder = new(buffer, 2048);
-            BuildLabel(label, ref builder, activeFilterState.Mods.Count);
-
+            BuildLabel(label, ref builder, activeFilterState.Mods.TotalCount, activeFilterState.Mods.Count);
+            ImGuiManager.PushFont("FA");
             DrawFilterBar(strId, builder, activeFilterState);
 
             var avail = ImGui.GetContentRegionAvail();
@@ -221,10 +342,11 @@
             if (modsConfig.WarningsCount > 0)
             {
                 builder.Reset();
-                builder.Append(MaterialIcons.Warning);
+                builder.Append(FontAwesome.Warning);
                 builder.Append(modsConfig.WarningsCount);
                 builder.End();
                 ImGui.TextColored(Colors.Yellow, builder);
+                DisplayMessages(builder, modsConfig, RimSeverity.Warn);
             }
 
             if (modsConfig.ErrorsCount > 0)
@@ -235,21 +357,56 @@
                 }
 
                 builder.Reset();
-                builder.Append(MaterialIcons.Error);
+                builder.Append(FontAwesome.CircleExclamation);
                 builder.Append(modsConfig.ErrorsCount);
                 builder.End();
                 ImGui.TextColored(Colors.Red, builder);
+                DisplayMessages(builder, modsConfig, RimSeverity.Error);
             }
-
+            ImGuiManager.PopFont();
             ImGui.EndChild();
         }
 
-        private static unsafe void BuildLabel(ReadOnlySpan<byte> label, ref StrBuilder builder, int modCount)
+        private unsafe void DisplayMessages(StrBuilder builder, ModsConfig modsConfig, RimSeverity severity)
+        {
+            if (ImGui.BeginItemTooltip())
+            {
+                foreach (var msg in modsConfig.Messages)
+                {
+                    if (msg.Severity != severity) continue;
+                    ImGui.Text(BuildModLabel(builder, msg.Mod));
+                    ImGui.Indent();
+                    ImGui.Text(msg.Message);
+                    ImGui.Unindent();
+                }
+                ImGui.EndTooltip();
+            }
+        }
+
+        private static unsafe byte* BuildModLabel(StrBuilder builder, RimMod mod)
+        {
+            builder.Reset();
+            builder.Append(mod.Name);
+            builder.End();
+            return builder;
+        }
+
+        private static unsafe void BuildLabel(ReadOnlySpan<byte> label, ref StrBuilder builder, int totalCount, int modCount)
         {
             var size = ImGui.GetWindowSize();
             builder.Append(label);
-            builder.Append(' ');
-            builder.Append(modCount);
+            builder.Append(" ["u8);
+            if (totalCount != modCount)
+            {
+                builder.Append(modCount);
+                builder.Append("/"u8);
+                builder.Append(totalCount);
+            }
+            else
+            {
+                builder.Append(modCount);
+            }
+            builder.Append("]"u8);
             builder.End();
             var text = ImGui.CalcTextSize(builder);
             var c = ImGui.GetCursorPos();
@@ -259,7 +416,7 @@
 
         private unsafe void DisplayMods(ReadOnlySpan<byte> strId, ReadOnlySpan<byte> label, IReadOnlyList<RimMod> mods, Vector2 size)
         {
-            if (!ImGui.BeginChild(strId, size, ImGuiChildFlags.FrameStyle))
+            if (!ImGui.BeginChild(strId, size, ImGuiChildFlags.FrameStyle) || modsConfig == null || inactiveFilterState == null || activeFilterState == null)
             {
                 ImGui.EndChild();
                 return;
@@ -289,16 +446,18 @@
             float warnWidth = ImGui.CalcTextSize(buffer).X;
             var draw = ImGui.GetWindowDrawList();
 
+            // ABGR
             var yellow = 0xff00ffff;
             var red = 0xff0000ff;
             for (int i = start; i < end; i++)
             {
                 var mod = mods[i];
 
+                var dropRectMin = ImGui.GetCursorScreenPos();
                 builder.Reset();
                 builder.Append(KindToIcon(mod.Kind));
                 builder.End();
-                ImGui.Text(builder);
+                ImGui.TextColored(KindToColor(mod.Kind), builder);
                 ImGui.SameLine();
 
                 builder.Reset();
@@ -306,9 +465,50 @@
                 builder.Append("##"u8);
                 builder.Append(i);
                 builder.End();
+
                 if (ImGui.Selectable(builder, SelectedMod == mod))
                 {
                     SelectedMod = mod;
+                }
+
+                if (ImGui.BeginDragDropSource(ImGuiDragDropFlags.None))
+                {
+                    ImGui.SetDragDropPayload("RimMod"u8, &i, sizeof(int));
+                    builder.Reset();
+                    builder.Append(KindToIcon(mod.Kind));
+                    builder.End();
+                    ImGui.TextColored(KindToColor(mod.Kind), builder);
+                    ImGui.SameLine();
+                    ImGui.Text(mod.Name);
+                    ImGui.EndDragDropSource();
+                }
+
+                if (ImGui.BeginDragDropTarget())
+                {
+                    var payload = ImGui.AcceptDragDropPayload("RimMod"u8, ImGuiDragDropFlags.AcceptNoDrawDefaultRect | ImGuiDragDropFlags.AcceptBeforeDelivery);
+
+                    if (!payload.IsNull)
+                    {
+                        int index = *(int*)payload.Data;
+                        Vector2 dropRectMax = dropRectMin + new Vector2(avail.X, lineHeight);
+                        if (index > i)
+                        {
+                            dropRectMax.Y = dropRectMin.Y;
+                        }
+                        else
+                        {
+                            dropRectMin.Y = dropRectMax.Y;
+                        }
+
+                        draw.AddLine(dropRectMin, dropRectMax, ImGui.GetColorU32(ImGuiCol.DragDropTarget), 3.5f);
+
+                        if (payload.IsDelivery())
+                        {
+                            modsConfig.Move(mods[index], i);
+                            RefreshUI();
+                        }
+                    }
+                    ImGui.EndDragDropTarget();
                 }
 
                 ContextMenu(mod);
@@ -324,6 +524,8 @@
                     {
                         modsConfig.ActivateMod(mod);
                     }
+                    inactiveFilterState.Refresh();
+                    activeFilterState.Refresh();
                 }
 
                 bool hoveredMessages = false;
@@ -335,7 +537,7 @@
                     if (mod.HasErrors)
                     {
                         builder.Reset();
-                        builder.Append(MaterialIcons.Error);
+                        builder.Append(FontAwesome.CircleExclamation);
                         builder.End();
                         min.X -= warnWidth;
                         draw.AddText(min, red, buffer);
@@ -343,7 +545,7 @@
                     else if (mod.HasWarnings)
                     {
                         builder.Reset();
-                        builder.Append(MaterialIcons.Warning);
+                        builder.Append(FontAwesome.Warning);
                         builder.End();
                         min.X -= warnWidth;
                         draw.AddText(min, yellow, buffer);
@@ -390,12 +592,25 @@
         {
             return kind switch
             {
-                ModKind.Unknown => MaterialIcons.QuestionMark,
-                ModKind.Base => MaterialIcons.CheckCircle,
-                ModKind.Local => MaterialIcons.Computer,
-                ModKind.Steam => MaterialIcons.Public,
-                ModKind.All => MaterialIcons.ClearAll,
-                _ => MaterialIcons.QuestionMark
+                ModKind.Unknown => FontAwesome.CircleQuestion,
+                ModKind.Base => FontAwesome.Star,
+                ModKind.Local => FontAwesome.HardDrive,
+                ModKind.Steam => FontAwesome.Steam,
+                ModKind.All => FontAwesome.List,
+                _ => FontAwesome.CircleQuestion
+            };
+        }
+
+        private static Vector4 KindToColor(ModKind kind)
+        {
+            return kind switch
+            {
+                ModKind.Unknown => Colors.White,
+                ModKind.Base => Colors.Goldenrod,
+                ModKind.Local => Colors.CadetBlue,
+                ModKind.Steam => Colors.White,
+                ModKind.All => Colors.White,
+                _ => Colors.White
             };
         }
 
@@ -406,14 +621,29 @@
                 return;
             }
 
-            if (ImGui.MenuItem("Open in Explorer"))
+            if (ImGui.MenuItem("Open in Explorer"u8))
             {
                 OpenFolder(mod.Path);
             }
 
-            if (ImGui.MenuItem("Open URL"))
+            if (ImGui.MenuItem("Open URL"u8))
             {
-                OpenUrl(mod.Metadata.Url);
+                if (mod.SteamId.HasValue)
+                {
+                    OpenUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={mod.SteamId.Value}");
+                }
+                else
+                {
+                    OpenUrl(mod.Metadata.Url);
+                }
+            }
+
+            if (mod.SteamId.HasValue)
+            {
+                if (ImGui.MenuItem("Open in Steam"))
+                {
+                    OpenUrl($"steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id={mod.SteamId.Value}");
+                }
             }
 
             ImGui.EndPopup();
@@ -455,6 +685,14 @@
             catch
             {
             }
+        }
+
+        private static StrBuilder BuildLabel(StrBuilder builder, char icon)
+        {
+            builder.Reset();
+            builder.Append(icon);
+            builder.End();
+            return builder;
         }
 
         private static StrBuilder BuildText(StrBuilder builder, ReadOnlySpan<byte> label, string text)

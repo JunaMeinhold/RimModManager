@@ -1,9 +1,11 @@
 ﻿namespace RimModManager.RimWorld
 {
-    public class ModDependency
+    public struct ModDependency
     {
-        public string PackageId { get; set; } = null!;
-        public string DisplayName { get; set; } = null!;
-        public string SteamWorkshopUrl { get; set; } = null!;
+        public string PackageId { get; set; }
+
+        public string DisplayName { get; set; }
+
+        public string SteamWorkshopUrl { get; set; }
     }
 }

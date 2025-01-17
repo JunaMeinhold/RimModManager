@@ -28,10 +28,12 @@
             RimVersion version = default;
             int* pResult = (int*)&version;
             int i = 0;
-            while (!span.IsEmpty && i < 3)
+            while (!span.IsEmpty && i < 4)
             {
                 int idx0 = span.IndexOfAny(['.', ' ']);
                 if (idx0 == -1) idx0 = span.Length;
+                var part = span[..idx0];
+                if (part.StartsWith("rev")) break;
                 pResult[i++] = int.Parse(span[..idx0]);
                 if (idx0 == span.Length) return version;
                 span = span[(idx0 + 1)..];

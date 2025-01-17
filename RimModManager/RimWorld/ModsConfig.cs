@@ -1,5 +1,6 @@
 ﻿namespace RimModManager.RimWorld
 {
+    using Hexa.NET.SDL2;
     using RimModManager;
     using RimModManager.RimWorld.Rules;
     using RimModManager.RimWorld.Sorting;
@@ -105,13 +106,13 @@
             }
         }
 
-        private static void CheckDependencies(RimVersion version, HashSet<string> activeModsIds, RimMod mod)
+        private void CheckDependencies(RimVersion version, HashSet<string> activeModsIds, RimMod mod)
         {
             foreach (var deps in mod.Metadata.EnumerateDependencies(version))
             {
                 if (!activeModsIds.Contains(deps.PackageId))
                 {
-                    mod.AddMessage($"Mod depends on {deps.DisplayName} ({deps.PackageId}) but it's not loaded", RimSeverity.Error);
+                    AddMessage(mod, $"Mod depends on {deps.DisplayName} ({deps.PackageId}) but it's not loaded", RimSeverity.Error);
                 }
             }
         }
@@ -169,7 +170,7 @@
         {
             if (severity == RimSeverity.Warn) WarningsCount++;
             if (severity == RimSeverity.Error) ErrorsCount++;
-            RimMessage msg = new(message, severity);
+            RimMessage msg = new(mod, message, severity);
             Messages.Add(msg);
             mod.AddMessage(message, severity);
         }
@@ -236,6 +237,7 @@
                 mod.IsActive = false;
             }
             activeModIds.Clear();
+            CheckForProblems();
         }
 
         public void Move(RimMod mod, int index)
@@ -246,22 +248,20 @@
                 if (oldIndex == -1) throw new ArgumentException("Item was not found in list.", nameof(mod));
                 activeMods.RemoveAt(oldIndex);
                 activeModIds.RemoveAt(oldIndex);
+
                 activeMods.Insert(index, mod);
                 activeModIds.Insert(index, mod.PackageId);
+                CheckForProblems();
             }
         }
 
         private void PopulateList(RimModList modList)
         {
-            Dictionary<string, RimMod> packageIdToMod = new(StringComparer.OrdinalIgnoreCase);
-            foreach (var mod in modList)
-            {
-                packageIdToMod[mod.PackageId] = mod;
-            }
-
+            inactiveMods.Clear();
+            activeMods.Clear();
             foreach (string modId in ActiveModIds)
             {
-                if (packageIdToMod.TryGetValue(modId, out var mod))
+                if (modList.TryGetMod(modId, out var mod))
                 {
                     activeMods.Add(mod);
                 }
@@ -274,13 +274,8 @@
                 mod.IsActive = true;
             }
 
-            HashSet<string> activeModsIds = new(StringComparer.OrdinalIgnoreCase);
-            foreach (var id in activeModIds)
-            {
-                activeModsIds.Add(id);
-            }
+            HashSet<string> activeModsIds = new(activeModIds, StringComparer.OrdinalIgnoreCase);
 
-            var currentVersion = RimVersion.ToCompareVersion();
             foreach (var mod in modList)
             {
                 if (!activeModsIds.Contains(mod.PackageId))
@@ -290,6 +285,7 @@
                 }
             }
 
+            var currentVersion = RimVersion.ToCompareVersion();
             ResolveModsDeps(currentVersion, modList, modList.PackageIdToMod, modList.SteamIdToMod);
         }
 
@@ -299,6 +295,9 @@
             var customRules = RuleSet.CustomRules;
             foreach (var mod in allMods)
             {
+                mod.LoadAfter.Clear();
+                mod.LoadBefore.Clear();
+
                 mod.LoadAfter.AddRange(mod.Metadata.EnumerateDependenciesAsRef(currentVersion, packageIdToMod));
                 mod.LoadAfter.AddRange(SteamDatabase.Instance.EnumerateDependencies(mod, steamIdToMod));
                 mod.LoadBefore.AddRange(mod.Metadata.EnumerateLoadBefore(currentVersion, packageIdToMod));
@@ -348,8 +347,21 @@
             }
 
             configData.PopulateList(modList);
+            configData.inactiveMods.Sort(AZNameComparer.Instance);
 
             return configData;
+        }
+
+        private readonly struct AZNameComparer : IComparer<RimMod>
+        {
+            public static AZNameComparer Instance = new();
+
+            public readonly int Compare(RimMod? x, RimMod? y)
+            {
+                if (x == null || y == null) return 0;
+
+                return x.Name.CompareTo(y.Name);
+            }
         }
 
         private static IEnumerable<string> ParseList(XmlReader reader, string elementName)
@@ -367,6 +379,11 @@
                     yield break;
                 }
             }
+        }
+
+        public void Save(RimModManagerConfig config)
+        {
+            Save(Path.Combine(config.GameConfigFolder!, "ModsConfig.xml"));
         }
 
         public void Save(string path)

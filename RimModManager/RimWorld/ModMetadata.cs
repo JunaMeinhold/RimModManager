@@ -1,44 +1,7 @@
 ﻿namespace RimModManager.RimWorld
 {
-    using Hexa.NET.ImGui.Backends.D3D11;
-    using Hexa.NET.ImGui.Backends.Win32;
     using RimModManager;
     using System.Xml.Linq;
-
-    public struct ModReference
-    {
-        public RimMod Mod;
-        public bool LoadBefore;
-        public bool LoadAfter;
-        public bool Forced;
-
-        public ModReference(RimMod mod, bool loadBefore, bool loadAfter, bool forced)
-        {
-            Mod = mod;
-            LoadBefore = loadBefore;
-            LoadAfter = loadAfter;
-            Forced = forced;
-        }
-
-        public static ModReference BuildRef(string id, IReadOnlyDictionary<string, RimMod> packageIdToMod, bool loadBefore, bool loadAfter, bool forced)
-        {
-            if (!packageIdToMod.TryGetValue(id, out var dep))
-            {
-                dep = RimMod.CreateUnknown(id);
-            }
-            return new ModReference(dep, loadBefore, loadAfter, forced);
-        }
-
-        public static ModReference BuildRef(long id, IReadOnlyDictionary<long, RimMod> steamIdToMod, bool loadBefore, bool loadAfter, bool forced)
-        {
-            if (!steamIdToMod.TryGetValue(id, out var dep))
-            {
-                dep = RimMod.CreateUnknown("unknown.package.id");
-                dep.SteamId = id;
-            }
-            return new ModReference(dep, loadBefore, loadAfter, forced);
-        }
-    }
 
     public class ModMetadata
     {
@@ -148,14 +111,14 @@
         {
             foreach (var item in ModDependencies)
             {
-                yield return ModReference.BuildRef(item.PackageId, packageIdToMod, false, true, true);
+                yield return ModReference.BuildRef(item.PackageId, packageIdToMod, ModReferenceDirection.LoadAfter, true);
             }
 
             if (ModDependenciesByVersion.TryGetValue(version, out var modDependencies))
             {
                 foreach (var item in modDependencies)
                 {
-                    yield return ModReference.BuildRef(item.PackageId, packageIdToMod, false, true, true);
+                    yield return ModReference.BuildRef(item.PackageId, packageIdToMod, ModReferenceDirection.LoadAfter, true);
                 }
             }
         }
@@ -164,20 +127,20 @@
         {
             foreach (var item in LoadBefore)
             {
-                yield return ModReference.BuildRef(item, packageIdToMod, true, false, false);
+                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadBefore, false);
             }
 
             if (LoadBeforeByVersion.TryGetValue(version, out var loadBefore))
             {
                 foreach (var item in loadBefore)
                 {
-                    yield return ModReference.BuildRef(item, packageIdToMod, true, false, false);
+                    yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadBefore, false);
                 }
             }
 
             foreach (var item in ForceLoadBefore)
             {
-                yield return ModReference.BuildRef(item, packageIdToMod, true, false, true);
+                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadBefore, true);
             }
         }
 
@@ -185,20 +148,20 @@
         {
             foreach (var item in LoadAfter)
             {
-                yield return ModReference.BuildRef(item, packageIdToMod, false, true, false);
+                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadAfter, false);
             }
 
             if (LoadAfterByVersion.TryGetValue(version, out var loadBefore))
             {
                 foreach (var item in loadBefore)
                 {
-                    yield return ModReference.BuildRef(item, packageIdToMod, false, true, false);
+                    yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadAfter, false);
                 }
             }
 
             foreach (var item in ForceLoadAfter)
             {
-                yield return ModReference.BuildRef(item, packageIdToMod, false, true, true);
+                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadAfter, true);
             }
         }
 

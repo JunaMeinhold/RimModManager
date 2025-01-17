@@ -1,5 +1,6 @@
 ﻿namespace RimModManager.RimWorld
 {
+    using RimModManager.RimWorld.Fluffy;
     using RimModManager.RimWorld.Sorting;
     using System.Collections.Generic;
 
@@ -14,6 +15,8 @@
         public long? SteamId { get; set; }
 
         public ModMetadata Metadata { get; set; } = null!;
+
+        public FluffyModManifest? FluffyManifest { get; set; }
 
         public string Name => Metadata.Name ?? Metadata.PackageId;
 
@@ -53,7 +56,7 @@
         {
             if (severity == RimSeverity.Warn) HasWarnings = true;
             if (severity == RimSeverity.Error) HasErrors = true;
-            RimMessage msg = new(message, severity);
+            RimMessage msg = new(this, message, severity);
             Messages.Add(msg);
         }
 
@@ -84,11 +87,13 @@
 
     public struct RimMessage
     {
+        public RimMod Mod;
         public string Message;
         public RimSeverity Severity;
 
-        public RimMessage(string message, RimSeverity severity)
+        public RimMessage(RimMod mod, string message, RimSeverity severity)
         {
+            Mod = mod;
             Message = message;
             Severity = severity;
         }

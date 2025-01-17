@@ -54,7 +54,7 @@
 
         public event Action<LogMessage>? LogMessage;
 
-        public void StartWorkers(int workerCount = 2)
+        public void StartWorkers(int workerCount = 4)
         {
             if (isRunning) return;
             isRunning = true;
@@ -163,11 +163,32 @@
             scanTask = Task.Run(() => ScanFolder(path));
         }
 
-        private void ScanFolder(string path)
+        public void ProcessPaths(params string[] folders)
         {
-            total = 0;
-            processed = 0;
-            queue.Clear();
+            if (isProcessing) return;
+            isProcessing = true;
+
+            scanTask = Task.Run(() =>
+            {
+                total = 0;
+                processed = 0;
+                queue.Clear();
+                foreach (var folder in folders)
+                {
+                    ScanFolder(folder, false);
+                }
+            });
+        }
+
+        private void ScanFolder(string path, bool clearState = true)
+        {
+            if (clearState)
+            {
+                total = 0;
+                processed = 0;
+                queue.Clear();
+            }
+
             int workerCount = processes!.Length;
             int batch = 0;
             foreach (var metadata in FileUtils.EnumerateEntries(path!, "", SearchOption.AllDirectories))

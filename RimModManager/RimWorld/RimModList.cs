@@ -1,6 +1,7 @@
 ﻿namespace RimModManager.RimWorld
 {
     using System.Collections;
+    using System.Diagnostics.CodeAnalysis;
 
     public class RimModList : IList<RimMod>
     {
@@ -37,6 +38,11 @@
         public bool IsReadOnly => ((ICollection<RimMod>)mods).IsReadOnly;
 
         public RimMod this[int index] { get => ((IList<RimMod>)mods)[index]; set => ((IList<RimMod>)mods)[index] = value; }
+
+        public bool TryGetMod(string packageId, [NotNullWhen(true)] out RimMod? mod)
+        {
+            return packageIdToMod.TryGetValue(packageId, out mod);
+        }
 
         public RimMod? FindMod(string packageId)
         {

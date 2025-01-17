@@ -16,7 +16,7 @@
             {
                 foreach (var dependency in entry.Dependencies)
                 {
-                    yield return ModReference.BuildRef(dependency.Key, steamIdToMod, false, true, true);
+                    yield return ModReference.BuildRef(dependency.Key, steamIdToMod, ModReferenceDirection.LoadAfter, true);
                 }
             }
         }

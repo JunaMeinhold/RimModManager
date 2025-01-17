@@ -6,11 +6,12 @@
     using Hexa.NET.Logging;
     using Hexa.NET.Mathematics;
     using Hexa.NET.Utilities.Text;
+    using RimModManager.RimWorld;
     using System.Numerics;
 
     public class OptimizeTexturesWindow : ImWindow
     {
-        private string path = string.Empty;
+        private readonly RimModManagerConfig config;
 
         private bool scrollToEnd = false;
 
@@ -21,10 +22,20 @@
 
         protected override string Name { get; } = "Optimize Textures";
 
-        public OptimizeTexturesWindow()
+        public OptimizeTexturesWindow(RimModManagerConfig config)
+        {
+            this.config = config;
+        }
+
+        public override void Init()
         {
             processor.LogMessage += OnLogMessage;
             processor.StartWorkers();
+        }
+
+        public override void Dispose()
+        {
+            processor.StopWorkers();
         }
 
         private void OnLogMessage(LogMessage message)
@@ -45,26 +56,12 @@
         {
             ImGui.BeginDisabled(processor.IsProcessing);
 
-            ImGui.InputText("Path"u8, ref path, 1024);
-            ImGui.SameLine();
-            if (ImGui.Button("..."u8))
-            {
-                OpenFileDialog dialog = new()
-                {
-                    OnlyAllowFolders = true
-                };
-                dialog.Show((s, r) =>
-                {
-                    if (r != DialogResult.Ok || s is not OpenFileDialog dialog) return;
-                    path = dialog.SelectedFile!;
-                });
-            }
-
-            ImGui.SameLine();
-
             if (ImGui.Button("Convert"u8))
             {
-                processor.ProcessPath(path);
+                if (config.CheckPaths())
+                {
+                    processor.ProcessPaths(config.LocalModsFolder!, config.SteamModFolder!);
+                }
             }
 
             ImGui.EndDisabled();
@@ -88,11 +85,13 @@
                 processor.BC7Quick = bc7quick;
             }
 
+            ImGui.BeginDisabled(true);
             var generateMips = processor.GenerateMips;
             if (ImGui.Checkbox("Generate Mips"u8, ref generateMips))
             {
                 processor.GenerateMips = generateMips;
             }
+            ImGui.EndDisabled();
 
             var overwriteFiles = processor.OverwriteFiles;
             if (ImGui.Checkbox("Overwrite Files"u8, ref overwriteFiles))

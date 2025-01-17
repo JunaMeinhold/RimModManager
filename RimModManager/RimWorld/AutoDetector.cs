@@ -6,14 +6,17 @@
     {
         private static readonly string LocalLow = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)) + "Low";
 
-        public static void Detect(RimModManagerConfig config)
+        public static bool Detect(RimModManagerConfig config)
         {
             string logFilePath = Path.Combine(LocalLow, @"Ludeon Studios\RimWorld by Ludeon Studios\Player.log");
 
             if (File.Exists(logFilePath))
             {
-                var lines = File.ReadAllLines(logFilePath);
-                foreach (var line in lines)
+                using var fs = File.Open(logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new StreamReader(fs);
+
+                string? line = null;
+                while ((line = reader.ReadLine()) != null)
                 {
                     if (line.StartsWith("Mono path[0] ="))
                     {
@@ -26,22 +29,28 @@
                             config.GameFolder = basePath.NormalizePath();
 
                             string configFolderPath = Path.Combine(LocalLow, @"Ludeon Studios\RimWorld by Ludeon Studios\Config");
-                            if (Directory.Exists(configFolderPath))
+                            if (!Directory.Exists(configFolderPath))
                             {
-                                config.GameConfigFolder = configFolderPath.NormalizePath();
+                                return false;
                             }
+                            config.GameConfigFolder = configFolderPath.NormalizePath();
 
                             string steamModFolderPath = GetSteamModFolder(basePath);
-                            if (!string.IsNullOrEmpty(steamModFolderPath) && Directory.Exists(steamModFolderPath))
+                            if (!Directory.Exists(steamModFolderPath))
                             {
-                                config.SteamModFolder = steamModFolderPath.NormalizePath();
+                                return false;
                             }
+                            config.SteamModFolder = steamModFolderPath.NormalizePath();
 
-                            break;
+                            return true;
                         }
+
+                        return false;
                     }
                 }
             }
+
+            return false;
         }
 
         private static unsafe string NormalizePath(this string path)

@@ -21,6 +21,8 @@
 
         public int Count => innerList.Count;
 
+        public int TotalCount => baseList.Count;
+
         public IEnumerator<T> GetEnumerator()
         {
             return innerList.GetEnumerator();

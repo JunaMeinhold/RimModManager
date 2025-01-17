@@ -17,22 +17,10 @@
     {
         private ComPtr<ID3D11Device5> device;
 
-        public D3D11ImagePipeline(WorkerIPCClient client) : base(client)
+        public D3D11ImagePipeline(WorkerIPCClient client) : base(client, false, 1)
         {
-            TextureLoader.ConvertSRGBToRGB = false;
             D3D11Adapter.Init(null!, false);
             device = D3D11GraphicsDevice.Device;
-        }
-
-        public static Format SRGBToRGB(Format format)
-        {
-            return format switch
-            {
-                Format.R8G8B8A8UnormSrgb => Format.R8G8B8G8Unorm,
-                Format.B8G8R8X8UnormSrgb => Format.B8G8R8X8Unorm,
-                Format.B8G8R8A8UnormSrgb => Format.B8G8R8A8Unorm,
-                _ => format
-            };
         }
 
         protected override JobFinish ProcessImage(JobPayload workload, CancellationToken cancellationToken)
@@ -43,12 +31,6 @@
                 texture = TextureLoader.LoadFormFile(workload.Source!);
 
                 var metadata = texture.Metadata;
-
-                if (DirectXTex.IsSRGB(metadata.Format))
-                {
-                    Format format = SRGBToRGB((Format)metadata.Format);
-                    SwapImage(ref texture, texture.Convert(format, TexFilterFlags.Default));
-                }
 
                 var isQuad = metadata.Width == metadata.Height;
                 if ((workload.Flags & WorkloadFlags.Upscale) != 0 && isQuad)
