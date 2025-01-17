@@ -32,6 +32,8 @@
 
         private Task? refreshTask;
 
+        private bool refreshUI = false;
+
         public MainWindow()
         {
             Flags |= ImGuiWindowFlags.MenuBar;
@@ -156,6 +158,14 @@
             if (ImGui.BeginChild("SidePanel"u8, new(splitA, 0), ImGuiChildFlags.None))
             {
                 var d = ImGui.GetContentRegionAvail();
+
+                if (refreshUI)
+                {
+                    inactiveFilterState?.Refresh();
+                    activeFilterState?.Refresh();
+                    refreshUI = false;
+                }
+
                 DisplayInactive("##ModsPanel"u8, "Inactive"u8, new(splitB, -height));
                 ImGuiSplitter.VerticalSplitter("SplitB"u8, ref splitB, 0, float.MaxValue, -height);
                 DisplayActive("##LoadOrder"u8, "Active"u8, new(0, -height));
@@ -206,8 +216,7 @@
 
         private void RefreshUI()
         {
-            inactiveFilterState?.Refresh();
-            activeFilterState?.Refresh();
+            refreshUI = true;
         }
 
         private void DrawSelection(Vector2 size, RimMod? selectedMod)
@@ -524,8 +533,7 @@
                     {
                         modsConfig.ActivateMod(mod);
                     }
-                    inactiveFilterState.Refresh();
-                    activeFilterState.Refresh();
+                    RefreshUI();
                 }
 
                 bool hoveredMessages = false;
