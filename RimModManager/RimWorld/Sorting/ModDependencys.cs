@@ -9,6 +9,7 @@
         {
                 "zetrith.prepatcher",
                 "brrainz.harmony",
+                "me.samboycoding.betterloading.dev",
                 "ludeon.rimworld",
                 "ludeon.rimworld.royalty",
                 "ludeon.rimworld.ideology",

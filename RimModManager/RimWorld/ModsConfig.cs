@@ -1,11 +1,11 @@
 ﻿namespace RimModManager.RimWorld
 {
-    using Hexa.NET.SDL2;
     using RimModManager;
     using RimModManager.RimWorld.Rules;
     using RimModManager.RimWorld.Sorting;
     using RimModManager.RimWorld.SteamDB;
     using System.Collections.Generic;
+    using System.Runtime.Intrinsics.Arm;
     using System.Xml;
 
     public class ModsConfig
@@ -68,6 +68,11 @@
             foreach (var id in activeModIds)
             {
                 activeModsIds.Add(id);
+            }
+
+            if (packageIdToMod.TryGetValue(RimMod.CorePackageId, out var coreMod) && !coreMod.IsActive)
+            {
+                AddMessage(coreMod, "Core mod not loaded.", RimSeverity.Error);
             }
 
             var currentVersion = RimVersion.ToCompareVersion();
@@ -186,6 +191,20 @@
             CheckForProblems();
         }
 
+        public void ActivateMods(IEnumerable<RimMod> mods)
+        {
+            foreach (var mod in mods)
+            {
+                if (mod.IsActive) continue;
+                activeModIds.Add(mod.PackageId);
+                activeMods.Add(mod);
+                inactiveMods.Remove(mod);
+                mod.IsActive = true;
+            }
+
+            CheckForProblems();
+        }
+
         public void DeactiveMod(RimMod mod)
         {
             if (!mod.IsActive) return;
@@ -193,6 +212,20 @@
             activeMods.Remove(mod);
             inactiveMods.Add(mod);
             mod.IsActive = false;
+
+            CheckForProblems();
+        }
+
+        public void DeactiveMods(IEnumerable<RimMod> mods)
+        {
+            foreach (var mod in mods)
+            {
+                if (!mod.IsActive) continue;
+                RemoveId(mod.PackageId);
+                activeMods.Remove(mod);
+                inactiveMods.Add(mod);
+                mod.IsActive = false;
+            }
 
             CheckForProblems();
         }
@@ -427,6 +460,44 @@
                 activeModIds.Clear();
                 activeModIds.AddRange(sorted.Select(x => x.PackageId));
                 CheckForProblems();
+            }
+        }
+
+        public IEnumerable<RimMod> FindMissingDependencies(RimModList mods)
+        {
+            if (mods.TryGetMod(RimMod.CorePackageId, out var coreMod) && !coreMod.IsActive)
+            {
+                yield return coreMod;
+            }
+
+            var version = RimVersion.ToCompareVersion();
+            foreach (var mod in activeMods)
+            {
+                foreach (var dep in mod.Metadata.EnumerateDependencies(version))
+                {
+                    if (!mods.TryGetMod(dep.PackageId, out var depMod))
+                    {
+                        depMod = RimMod.CreateUnknown(dep.PackageId, dep.DisplayName, null);
+                        depMod.Metadata.Url = dep.DownloadUrl;
+                        if (dep.SteamWorkshopUrl != null)
+                        {
+                            int idx = dep.SteamWorkshopUrl.LastIndexOf('/');
+                            if (idx != -1 && idx + 1 < dep.SteamWorkshopUrl.Length)
+                            {
+                                var span = dep.SteamWorkshopUrl.AsSpan(idx + 1);
+                                if (long.TryParse(span, out var steamId))
+                                {
+                                    depMod.SteamId = steamId;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!depMod.IsActive)
+                    {
+                        yield return depMod;
+                    }
+                }
             }
         }
     }

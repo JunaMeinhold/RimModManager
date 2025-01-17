@@ -7,5 +7,7 @@
         public string DisplayName { get; set; }
 
         public string SteamWorkshopUrl { get; set; }
+
+        public string DownloadUrl { get; set; }
     }
 }

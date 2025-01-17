@@ -3,6 +3,17 @@
     using RimModManager.RimWorld;
     using System.Collections.Generic;
 
+    public readonly struct RimModComparer : IComparer<RimMod>
+    {
+        public static readonly RimModComparer Instance = new();
+
+        public int Compare(RimMod? x, RimMod? y)
+        {
+            if (x == null || y == null) return 0;
+            return StringComparer.OrdinalIgnoreCase.Compare(x.Name, y.Name);
+        }
+    }
+
     public class AlphabeticalSorter
     {
         public static void Sort(List<RimMod> activeMods, List<RimMod> modsLoadOrder)

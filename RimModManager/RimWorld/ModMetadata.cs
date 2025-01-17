@@ -1,6 +1,7 @@
 ﻿namespace RimModManager.RimWorld
 {
     using RimModManager;
+    using System.Runtime.Intrinsics.Arm;
     using System.Xml.Linq;
 
     public class ModMetadata
@@ -230,7 +231,8 @@
                     {
                         PackageId = dep.Element("packageId")?.Value!,
                         DisplayName = dep.Element("displayName")?.Value!,
-                        SteamWorkshopUrl = dep.Element("steamWorkshopUrl")?.Value!
+                        SteamWorkshopUrl = dep.Element("steamWorkshopUrl")?.Value!,
+                        DownloadUrl = dep.Element("downloadUrl")?.Value!
                     };
                     metadata.ModDependencies.Add(dependency);
                 }
@@ -249,7 +251,8 @@
                         {
                             PackageId = dep.Element("packageId")?.Value!,
                             DisplayName = dep.Element("displayName")?.Value!,
-                            SteamWorkshopUrl = dep.Element("steamWorkshopUrl")?.Value!
+                            SteamWorkshopUrl = dep.Element("steamWorkshopUrl")?.Value!,
+                            DownloadUrl = dep.Element("downloadUrl")?.Value!
                         };
                         dependenciesList.Add(dependency);
                     }

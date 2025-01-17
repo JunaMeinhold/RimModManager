@@ -33,7 +33,13 @@
                 }
             }
 
-            //AlphaSorter.Sort(activeMods, mods);
+            foreach (var mod in activeMods)
+            {
+                mod.Dependencies.Sort(RimModComparer.Instance);
+                mod.Dependants.Sort(RimModComparer.Instance);
+            }
+
+            activeMods.Sort(RimModComparer.Instance);
 
             var d1 = ModDependencys.GenTierOneDepsGraph(activeMods);
             var d3 = ModDependencys.GenTierThreeDepsGraph(activeMods);

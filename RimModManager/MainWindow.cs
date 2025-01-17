@@ -2,6 +2,7 @@
 {
     using Hexa.NET.ImGui;
     using Hexa.NET.ImGui.Widgets;
+    using Hexa.NET.ImGui.Widgets.Dialogs;
     using Hexa.NET.KittyUI.Graphics;
     using Hexa.NET.KittyUI.ImGuiBackend;
     using Hexa.NET.Mathematics;
@@ -17,6 +18,7 @@
     public class MainWindow : ImWindow
     {
         private readonly RimModManagerConfig config;
+
         private RimModList? mods;
         private ModsConfig? modsConfig;
         private RimMod? selectedMod;
@@ -136,8 +138,9 @@
 
             if (ImGui.BeginMenuBar())
             {
-                if (ImGui.MenuItem("File"u8))
+                if (ImGui.BeginMenu("File"u8))
                 {
+                    ImGui.EndMenu();
                 }
                 if (ImGui.MenuItem("Edit"u8))
                 {
@@ -190,10 +193,28 @@
                     Refresh();
                 }
                 ImGui.SameLine();
-                if (ImGui.Button("Sort"u8))
+                if (ImGui.Button("Sort"u8) && modsConfig != null && mods != null)
                 {
-                    modsConfig?.Sort();
-                    RefreshUI();
+                    HashSet<RimMod>? missingMods = null;
+                    foreach (var mod in modsConfig.FindMissingDependencies(mods))
+                    {
+                        missingMods ??= []; // lazy init.
+                        missingMods.Add(mod);
+                    }
+
+                    if (missingMods != null)
+                    {
+                        MissingDependenciesDialog dialog = new(modsConfig, missingMods);
+                        dialog.Show((s, r) =>
+                        {
+                            if (r != DialogResult.Ok) return;
+                            Sort();
+                        });
+                    }
+                    else
+                    {
+                        Sort();
+                    }
                 }
                 ImGui.SameLine();
                 if (ImGui.Button("Save"u8))
@@ -212,6 +233,12 @@
 
             ImGuiSplitter.VerticalSplitter("SplitA"u8, ref splitA, 100, avail.X - 100);
             DrawSelection(new(0, 0), selectedMod);
+        }
+
+        private void Sort()
+        {
+            modsConfig?.Sort();
+            RefreshUI();
         }
 
         private void RefreshUI()
@@ -292,9 +319,9 @@
         private static unsafe void DrawFilterBar(ReadOnlySpan<byte> strId, StrBuilder builder, FilterState state)
         {
             builder.Reset();
-            builder.Append(KindToIcon(state.Filter));
+            builder.Append(RimMod.KindToIcon(state.Filter));
             builder.End();
-            ImGui.PushStyleColor(ImGuiCol.Text, KindToColor(state.Filter));
+            ImGui.PushStyleColor(ImGuiCol.Text, RimMod.KindToColor(state.Filter));
             if (ImGui.Button(builder))
             {
                 var filter = state.Filter;
@@ -464,9 +491,9 @@
 
                 var dropRectMin = ImGui.GetCursorScreenPos();
                 builder.Reset();
-                builder.Append(KindToIcon(mod.Kind));
+                builder.Append(mod.GetIcon());
                 builder.End();
-                ImGui.TextColored(KindToColor(mod.Kind), builder);
+                ImGui.TextColored(mod.GetIconColor(), builder);
                 ImGui.SameLine();
 
                 builder.Reset();
@@ -484,9 +511,9 @@
                 {
                     ImGui.SetDragDropPayload("RimMod"u8, &i, sizeof(int));
                     builder.Reset();
-                    builder.Append(KindToIcon(mod.Kind));
+                    builder.Append(mod.GetIcon());
                     builder.End();
-                    ImGui.TextColored(KindToColor(mod.Kind), builder);
+                    ImGui.TextColored(mod.GetIconColor(), builder);
                     ImGui.SameLine();
                     ImGui.Text(mod.Name);
                     ImGui.EndDragDropSource();
@@ -520,7 +547,7 @@
                     ImGui.EndDragDropTarget();
                 }
 
-                ContextMenu(mod);
+                mod.DrawContextMenu();
 
                 var hovered = ImGui.IsItemHovered();
                 if (hovered && ImGuiP.IsMouseDoubleClicked(ImGuiMouseButton.Left))
@@ -575,15 +602,7 @@
 
                 if (hovered && !hoveredMessages)
                 {
-                    if (ImGui.BeginTooltip())
-                    {
-                        ImGui.Text(BuildText(builder, "Name: "u8, mod.Name));
-                        ImGui.Text(BuildTextList(builder, "Author: "u8, mod.Metadata.Authors));
-                        ImGui.Text(BuildText(builder, "PackageID: "u8, mod.PackageId));
-                        ImGui.Text(BuildText(builder, "Version: "u8, mod.Metadata.ModVersion ?? "Unknown"));
-                        ImGui.Text(BuildText(builder, "Path: "u8, mod.Path!));
-                        ImGui.EndTooltip();
-                    }
+                    mod.DrawTooltip(builder);
                 }
             }
 
@@ -596,138 +615,10 @@
             ImGui.EndChild();
         }
 
-        private static char KindToIcon(ModKind kind)
-        {
-            return kind switch
-            {
-                ModKind.Unknown => FontAwesome.CircleQuestion,
-                ModKind.Base => FontAwesome.Star,
-                ModKind.Local => FontAwesome.HardDrive,
-                ModKind.Steam => FontAwesome.Steam,
-                ModKind.All => FontAwesome.List,
-                _ => FontAwesome.CircleQuestion
-            };
-        }
-
-        private static Vector4 KindToColor(ModKind kind)
-        {
-            return kind switch
-            {
-                ModKind.Unknown => Colors.White,
-                ModKind.Base => Colors.Goldenrod,
-                ModKind.Local => Colors.CadetBlue,
-                ModKind.Steam => Colors.White,
-                ModKind.All => Colors.White,
-                _ => Colors.White
-            };
-        }
-
-        private static void ContextMenu(RimMod mod)
-        {
-            if (!ImGui.BeginPopupContextItem())
-            {
-                return;
-            }
-
-            if (ImGui.MenuItem("Open in Explorer"u8))
-            {
-                OpenFolder(mod.Path);
-            }
-
-            if (ImGui.MenuItem("Open URL"u8))
-            {
-                if (mod.SteamId.HasValue)
-                {
-                    OpenUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={mod.SteamId.Value}");
-                }
-                else
-                {
-                    OpenUrl(mod.Metadata.Url);
-                }
-            }
-
-            if (mod.SteamId.HasValue)
-            {
-                if (ImGui.MenuItem("Open in Steam"))
-                {
-                    OpenUrl($"steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id={mod.SteamId.Value}");
-                }
-            }
-
-            ImGui.EndPopup();
-        }
-
-        private static void OpenUrl(string? url)
-        {
-            if (string.IsNullOrEmpty(url)) return;
-            try
-            {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    url = url.Replace("&", "^&");
-                    Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                {
-                    Process.Start("xdg-open", url);
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
-                    Process.Start("open", url);
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        private static void OpenFolder(string? path)
-        {
-            if (string.IsNullOrEmpty(path)) return;
-            try
-            {
-                ProcessStartInfo psi = new("explorer.exe") { UseShellExecute = true };
-                psi.ArgumentList.Add(path);
-                Process.Start(psi);
-            }
-            catch
-            {
-            }
-        }
-
         private static StrBuilder BuildLabel(StrBuilder builder, char icon)
         {
             builder.Reset();
             builder.Append(icon);
-            builder.End();
-            return builder;
-        }
-
-        private static StrBuilder BuildText(StrBuilder builder, ReadOnlySpan<byte> label, string text)
-        {
-            builder.Reset();
-            builder.Append(label);
-            builder.Append(text);
-            builder.End();
-            return builder;
-        }
-
-        private static StrBuilder BuildTextList(StrBuilder builder, ReadOnlySpan<byte> label, List<string> texts)
-        {
-            builder.Reset();
-            builder.Append(label);
-            bool first = true;
-            foreach (var text in texts)
-            {
-                if (!first)
-                {
-                    builder.Append(","u8);
-                }
-                first = false;
-
-                builder.Append(text);
-            }
-
             builder.End();
             return builder;
         }
