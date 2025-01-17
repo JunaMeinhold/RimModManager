@@ -399,7 +399,7 @@
             foreach (var mod in ActiveModIds)
             {
                 writer.WriteStartElement("li");
-                writer.WriteString(mod);
+                writer.WriteString(mod.ToLowerInvariant());
                 writer.WriteEndElement(); // </li>
             }
             writer.WriteEndElement(); // </activeMods>
