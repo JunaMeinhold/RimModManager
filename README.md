@@ -1,4 +1,4 @@
-### A mod manager for RimWorld
+### A mod manager for RimWorld (WIP)
 
 #### Features:
 - Auto-sort
