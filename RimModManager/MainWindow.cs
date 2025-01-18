@@ -8,16 +8,16 @@
     using Hexa.NET.Mathematics;
     using Hexa.NET.Utilities.Text;
     using RimModManager.RimWorld;
+    using RimModManager.RimWorld.Profiles;
     using RimModManager.TextureOptimizer;
     using System;
     using System.Collections.Generic;
-    using System.Diagnostics;
     using System.Numerics;
-    using System.Runtime.InteropServices;
 
     public class MainWindow : ImWindow
     {
         private readonly RimModManagerConfig config;
+        private readonly RimProfileManager profileManager = new();
 
         private RimModList? mods;
         private ModsConfig? modsConfig;
@@ -75,7 +75,8 @@
             refreshTask = Task.Run(() =>
             {
                 if (!config.CheckPaths()) return;
-                mods = RimModLoader.LoadMods(config);
+                RimModLoader.RefreshMods(config);
+                mods = RimModLoader.Current;
                 modsConfig = ModsConfig.Load(config, mods);
                 modsConfig.CheckForProblems();
 
@@ -144,6 +145,29 @@
                 }
                 if (ImGui.MenuItem("Edit"u8))
                 {
+                }
+                if (ImGui.BeginMenu("Profiles"u8))
+                {
+                    if (ImGui.MenuItem("Create new"u8) && modsConfig != null)
+                    {
+                        profileManager.Create(modsConfig);
+                    }
+
+                    if (ImGui.MenuItem("Manage Profiles"u8) && mods != null)
+                    {
+                        profileManager.OpenProfileManager(mods);
+                    }
+                    ImGui.SeparatorText("Apply Profile"u8);
+
+                    foreach (var profile in profileManager.Profiles)
+                    {
+                        if (ImGui.MenuItem(profile.Name) && modsConfig != null && mods != null)
+                        {
+                            modsConfig.Apply(profile, mods);
+                        }
+                    }
+
+                    ImGui.EndMenu();
                 }
                 if (ImGui.MenuItem("Textures"u8))
                 {
@@ -375,56 +399,10 @@
             avail.Y -= ImGui.GetTextLineHeightWithSpacing();
             DisplayMods(strId, label, activeFilterState.Mods, avail);
 
-            if (modsConfig.WarningsCount > 0)
-            {
-                builder.Reset();
-                builder.Append(FontAwesome.Warning);
-                builder.Append(modsConfig.WarningsCount);
-                builder.End();
-                ImGui.TextColored(Colors.Yellow, builder);
-                DisplayMessages(builder, modsConfig, RimSeverity.Warn);
-            }
+            modsConfig.Messages.DrawBar(builder);
 
-            if (modsConfig.ErrorsCount > 0)
-            {
-                if (modsConfig.WarningsCount > 0)
-                {
-                    ImGui.SameLine();
-                }
-
-                builder.Reset();
-                builder.Append(FontAwesome.CircleExclamation);
-                builder.Append(modsConfig.ErrorsCount);
-                builder.End();
-                ImGui.TextColored(Colors.Red, builder);
-                DisplayMessages(builder, modsConfig, RimSeverity.Error);
-            }
             ImGuiManager.PopFont();
             ImGui.EndChild();
-        }
-
-        private unsafe void DisplayMessages(StrBuilder builder, ModsConfig modsConfig, RimSeverity severity)
-        {
-            if (ImGui.BeginItemTooltip())
-            {
-                foreach (var msg in modsConfig.Messages)
-                {
-                    if (msg.Severity != severity) continue;
-                    ImGui.Text(BuildModLabel(builder, msg.Mod));
-                    ImGui.Indent();
-                    ImGui.Text(msg.Message);
-                    ImGui.Unindent();
-                }
-                ImGui.EndTooltip();
-            }
-        }
-
-        private static unsafe byte* BuildModLabel(StrBuilder builder, RimMod mod)
-        {
-            builder.Reset();
-            builder.Append(mod.Name);
-            builder.End();
-            return builder;
         }
 
         private static unsafe void BuildLabel(ReadOnlySpan<byte> label, ref StrBuilder builder, int totalCount, int modCount)
@@ -450,7 +428,7 @@
             ImGui.Text(builder);
         }
 
-        private unsafe void DisplayMods(ReadOnlySpan<byte> strId, ReadOnlySpan<byte> label, IReadOnlyList<RimMod> mods, Vector2 size)
+        private unsafe void DisplayMods(ReadOnlySpan<byte> strId, ReadOnlySpan<byte> label, FilteredList<RimMod> mods, Vector2 size)
         {
             if (!ImGui.BeginChild(strId, size, ImGuiChildFlags.FrameStyle) || modsConfig == null || inactiveFilterState == null || activeFilterState == null)
             {
@@ -482,9 +460,6 @@
             float warnWidth = ImGui.CalcTextSize(buffer).X;
             var draw = ImGui.GetWindowDrawList();
 
-            // ABGR
-            var yellow = 0xff00ffff;
-            var red = 0xff0000ff;
             for (int i = start; i < end; i++)
             {
                 var mod = mods[i];
@@ -563,42 +538,7 @@
                     RefreshUI();
                 }
 
-                bool hoveredMessages = false;
-                if (mod.Messages.Count > 0)
-                {
-                    Vector2 max = ImGui.GetCursorScreenPos() + new Vector2(avail.X, 0);
-                    Vector2 min = max - new Vector2(0, lineHeight);
-
-                    if (mod.HasErrors)
-                    {
-                        builder.Reset();
-                        builder.Append(FontAwesome.CircleExclamation);
-                        builder.End();
-                        min.X -= warnWidth;
-                        draw.AddText(min, red, buffer);
-                    }
-                    else if (mod.HasWarnings)
-                    {
-                        builder.Reset();
-                        builder.Append(FontAwesome.Warning);
-                        builder.End();
-                        min.X -= warnWidth;
-                        draw.AddText(min, yellow, buffer);
-                    }
-
-                    hoveredMessages = ImGui.IsMouseHoveringRect(min, max);
-                    if (hovered && hoveredMessages)
-                    {
-                        if (ImGui.BeginTooltip())
-                        {
-                            foreach (var mes in mod.Messages)
-                            {
-                                ImGui.Text(mes.Message);
-                            }
-                            ImGui.EndTooltip();
-                        }
-                    }
-                }
+                bool hoveredMessages = mod.DrawMessages(builder, hovered, avail.X);
 
                 if (hovered && !hoveredMessages)
                 {

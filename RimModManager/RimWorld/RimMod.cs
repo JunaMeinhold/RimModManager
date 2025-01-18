@@ -3,8 +3,10 @@
     using Hexa.NET.ImGui;
     using Hexa.NET.Mathematics;
     using Hexa.NET.Utilities.Text;
+    using Newtonsoft.Json.Linq;
     using RimModManager.RimWorld.Fluffy;
     using RimModManager.RimWorld.Sorting;
+    using System;
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.Numerics;
@@ -32,15 +34,15 @@
 
         public string PreviewImagePath => System.IO.Path.Combine(Path ?? string.Empty, "About", "preview.png");
 
-        public List<RimMessage> Messages { get; } = [];
+        public RimMessageCollection Messages { get; set; } = [];
 
-        public bool HasWarnings { get; set; }
+        public bool HasWarnings => Messages.WarningsCount > 0;
 
         public bool HasErrors { get; set; }
 
-        public List<ModReference> LoadBefore { get; } = [];
+        public List<ModReference> LoadBefore { get; private set; } = [];
 
-        public List<ModReference> LoadAfter { get; } = [];
+        public List<ModReference> LoadAfter { get; private set; } = [];
 
         IEnumerable<RimMod> INode<RimMod>.Dependencies => Dependencies;
 
@@ -48,6 +50,72 @@
 
         public List<RimMod> Dependencies = [];
         public List<RimMod> Dependants = [];
+
+        public RimMod Clone()
+        {
+            return new()
+            {
+                Kind = Kind,
+                IsActive = IsActive,
+                Path = Path,
+                SteamId = SteamId,
+                Metadata = Metadata.Clone(),
+                FluffyManifest = FluffyManifest?.Clone(),
+                Messages = [.. Messages],
+                LoadBefore = [.. LoadBefore],
+                LoadAfter = [.. LoadAfter],
+                LoadBottom = LoadBottom,
+            };
+        }
+
+        public unsafe bool DrawMessages(StrBuilder builder, bool hovered, float width)
+        {
+            // ABGR
+            const uint yellow = 0xff00ffff;
+            const uint red = 0xff0000ff;
+
+            var draw = ImGui.GetWindowDrawList();
+
+            float lineHeight = ImGui.GetTextLineHeightWithSpacing();
+            bool hoveredMessages = false;
+            if (Messages.Count > 0)
+            {
+                Vector2 max = ImGui.GetCursorScreenPos() + new Vector2(width, 0);
+                Vector2 min = max - new Vector2(0, lineHeight);
+
+                if (Messages.ErrorsCount > 0)
+                {
+                    builder.Reset();
+                    builder.Append(FontAwesome.CircleExclamation);
+                    builder.End();
+                    min.X -= lineHeight;
+                    draw.AddText(min, red, builder);
+                }
+
+                if (Messages.WarningsCount > 0)
+                {
+                    builder.Reset();
+                    builder.Append(FontAwesome.Warning);
+                    builder.End();
+                    min.X -= lineHeight;
+                    draw.AddText(min, yellow, builder);
+                }
+
+                hoveredMessages = ImGui.IsMouseHoveringRect(min, max);
+                if (hovered && hoveredMessages)
+                {
+                    if (ImGui.BeginTooltip())
+                    {
+                        foreach (var mes in Messages)
+                        {
+                            ImGui.Text(mes.Message);
+                        }
+                        ImGui.EndTooltip();
+                    }
+                }
+            }
+            return hoveredMessages;
+        }
 
         public unsafe void DrawTooltip(StrBuilder builder)
         {
@@ -180,16 +248,11 @@
 
         public void AddMessage(string message, RimSeverity severity)
         {
-            if (severity == RimSeverity.Warn) HasWarnings = true;
-            if (severity == RimSeverity.Error) HasErrors = true;
-            RimMessage msg = new(this, message, severity);
-            Messages.Add(msg);
+            Messages.AddMessage(this, message, severity);
         }
 
         public void ClearMessages()
         {
-            HasWarnings = false;
-            HasErrors = false;
             Messages.Clear();
         }
 
@@ -220,7 +283,7 @@
         {
             return kind switch
             {
-                ModKind.Unknown => Colors.White,
+                ModKind.Unknown => Colors.Crimson,
                 ModKind.Base => Colors.Goldenrod,
                 ModKind.Local => Colors.CadetBlue,
                 ModKind.Steam => Colors.White,

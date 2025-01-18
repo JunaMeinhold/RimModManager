@@ -9,6 +9,7 @@
         private readonly HashSet<string> modIds = [];
         private readonly Dictionary<string, RimMod> packageIdToMod = [];
         private readonly Dictionary<long, RimMod> steamIdToMod = [];
+        private readonly Lock _lock = new();
 
         public RimModList(List<RimMod> mods)
         {
@@ -33,76 +34,215 @@
 
         public IReadOnlyDictionary<long, RimMod> SteamIdToMod => steamIdToMod;
 
-        public int Count => ((ICollection<RimMod>)mods).Count;
+        public int Count => mods.Count;
 
-        public bool IsReadOnly => ((ICollection<RimMod>)mods).IsReadOnly;
+        public bool IsReadOnly => false;
 
-        public RimMod this[int index] { get => ((IList<RimMod>)mods)[index]; set => ((IList<RimMod>)mods)[index] = value; }
+        public Lock SyncRoot => _lock;
+
+        public RimMod this[int index]
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return mods[index];
+                }
+            }
+            set
+            {
+                lock (_lock)
+                {
+                    mods[index] = value;
+                }
+            }
+        }
+
+        public void EnterLock()
+        {
+            _lock.Enter();
+        }
+
+        public void ExitLock()
+        {
+            _lock.Exit();
+        }
 
         public bool TryGetMod(string packageId, [NotNullWhen(true)] out RimMod? mod)
         {
-            return packageIdToMod.TryGetValue(packageId, out mod);
+            lock (_lock)
+            {
+                return packageIdToMod.TryGetValue(packageId, out mod);
+            }
         }
 
         public RimMod? FindMod(string packageId)
         {
-            packageIdToMod.TryGetValue(packageId, out var mod);
-            return mod;
+            lock (_lock)
+            {
+                packageIdToMod.TryGetValue(packageId, out var mod);
+                return mod;
+            }
         }
 
         public bool Contains(string packageId)
         {
-            return modIds.Contains(packageId);
+            lock (_lock)
+            {
+                return modIds.Contains(packageId);
+            }
+        }
+
+        public bool Contains(long steamId)
+        {
+            lock (_lock)
+            {
+                return steamIdToMod.ContainsKey(steamId);
+            }
         }
 
         public int IndexOf(RimMod item)
         {
-            return ((IList<RimMod>)mods).IndexOf(item);
+            lock (_lock)
+            {
+                return mods.IndexOf(item);
+            }
         }
 
         public void Insert(int index, RimMod item)
         {
-            ((IList<RimMod>)mods).Insert(index, item);
+            lock (_lock)
+            {
+                modIds.Add(item.PackageId);
+                packageIdToMod[item.PackageId] = item;
+                if (item.SteamId.HasValue)
+                {
+                    steamIdToMod[item.SteamId.Value] = item;
+                }
+                mods.Insert(index, item);
+            }
         }
 
         public void RemoveAt(int index)
         {
-            ((IList<RimMod>)mods).RemoveAt(index);
+            lock (_lock)
+            {
+                var item = mods[index];
+
+                modIds.Remove(item.PackageId);
+                packageIdToMod.Remove(item.PackageId);
+                if (item.SteamId.HasValue)
+                {
+                    steamIdToMod.Remove(item.SteamId.Value);
+                }
+
+                mods.RemoveAt(index);
+            }
         }
 
         public void Add(RimMod item)
         {
-            ((ICollection<RimMod>)mods).Add(item);
+            lock (_lock)
+            {
+                modIds.Add(item.PackageId);
+                packageIdToMod[item.PackageId] = item;
+                if (item.SteamId.HasValue)
+                {
+                    steamIdToMod[item.SteamId.Value] = item;
+                }
+
+                mods.Add(item);
+            }
         }
 
         public void Clear()
         {
-            ((ICollection<RimMod>)mods).Clear();
+            lock (_lock)
+            {
+                modIds.Clear();
+                packageIdToMod.Clear();
+                steamIdToMod.Clear();
+                mods.Clear();
+            }
         }
 
         public bool Contains(RimMod item)
         {
-            return ((ICollection<RimMod>)mods).Contains(item);
+            lock (_lock)
+            {
+                return mods.Contains(item);
+            }
         }
 
         public void CopyTo(RimMod[] array, int arrayIndex)
         {
-            ((ICollection<RimMod>)mods).CopyTo(array, arrayIndex);
+            lock (_lock)
+            {
+                mods.CopyTo(array, arrayIndex);
+            }
         }
 
         public bool Remove(RimMod item)
         {
-            return ((ICollection<RimMod>)mods).Remove(item);
+            lock (_lock)
+            {
+                modIds.Remove(item.PackageId);
+                packageIdToMod.Remove(item.PackageId);
+                if (item.SteamId.HasValue)
+                {
+                    steamIdToMod.Remove(item.SteamId.Value);
+                }
+
+                return mods.Remove(item);
+            }
         }
 
         public IEnumerator<RimMod> GetEnumerator()
         {
-            return ((IEnumerable<RimMod>)mods).GetEnumerator();
+            return new Enumerator(this);
         }
 
         IEnumerator IEnumerable.GetEnumerator()
         {
-            return ((IEnumerable)mods).GetEnumerator();
+            return new Enumerator(this);
+        }
+
+        private struct Enumerator : IEnumerator<RimMod>
+        {
+            private readonly RimModList mods;
+            private int index = -1;
+            private RimMod? current;
+
+            public Enumerator(RimModList mods)
+            {
+                this.mods = mods;
+                mods._lock.Enter();
+            }
+
+            public readonly RimMod Current => current!;
+
+            readonly object IEnumerator.Current => current!;
+
+            public readonly void Dispose()
+            {
+                mods._lock.Exit();
+            }
+
+            public bool MoveNext()
+            {
+                index++;
+                if (index == mods.Count)
+                {
+                    return false;
+                }
+                current = mods[index];
+                return true;
+            }
+
+            public void Reset()
+            {
+                index = -1;
+            }
         }
     }
 }

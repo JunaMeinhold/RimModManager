@@ -25,6 +25,23 @@
 
         public string DownloadUri { get; set; } = string.Empty;
 
+        public FluffyModManifest Clone()
+        {
+            return new()
+            {
+                Identifier = Identifier,
+                Version = Version,
+                Dependencies = [.. Dependencies],
+                IncompatibleWith = [.. IncompatibleWith],
+                LoadBefore = [.. LoadBefore],
+                LoadAfter = [.. LoadAfter],
+                Suggests = [.. Suggests],
+                ShowCrossPromotions = ShowCrossPromotions,
+                ManifestUri = ManifestUri,
+                DownloadUri = DownloadUri,
+            };
+        }
+
         public static FluffyModManifest Parse(string path)
         {
             FluffyModManifest manifest = new();

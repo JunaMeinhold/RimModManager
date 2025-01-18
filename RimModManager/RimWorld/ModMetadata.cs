@@ -1,7 +1,6 @@
 ﻿namespace RimModManager.RimWorld
 {
     using RimModManager;
-    using System.Runtime.Intrinsics.Arm;
     using System.Xml.Linq;
 
     public class ModMetadata
@@ -74,6 +73,32 @@
             ModVersion = null!;
             ModIconPath = null!;
             Url = null!;
+        }
+
+        public ModMetadata Clone()
+        {
+            return new()
+            {
+                PackageId = PackageId,
+                Name = Name,
+                Description = Description,
+                ModVersion = ModVersion,
+                ModIconPath = ModIconPath,
+                Url = Url,
+                Authors = [.. Authors],
+                SupportedVersions = [.. SupportedVersions],
+                DescriptionsByVersion = DescriptionsByVersion.ToDictionary(),
+                ModDependencies = [.. ModDependencies],
+                ModDependenciesByVersion = ModDependenciesByVersion.ToDictionary(),
+                LoadBefore = [.. LoadBefore],
+                LoadBeforeByVersion = LoadBeforeByVersion.ToDictionary(),
+                ForceLoadBefore = [.. ForceLoadBefore],
+                LoadAfter = [.. LoadAfter],
+                LoadAfterByVersion = LoadAfterByVersion.ToDictionary(),
+                ForceLoadAfter = [.. ForceLoadAfter],
+                IncompatibleWith = [.. IncompatibleWith],
+                IncompatibleWithByVersion = IncompatibleWithByVersion.ToDictionary(),
+            };
         }
 
         public IEnumerable<ModDependency> EnumerateDependencies(RimVersion version)

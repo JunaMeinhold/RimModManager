@@ -1,11 +1,11 @@
 ﻿namespace RimModManager.RimWorld
 {
     using RimModManager;
+    using RimModManager.RimWorld.Profiles;
     using RimModManager.RimWorld.Rules;
     using RimModManager.RimWorld.Sorting;
     using RimModManager.RimWorld.SteamDB;
     using System.Collections.Generic;
-    using System.Runtime.Intrinsics.Arm;
     using System.Xml;
 
     public class ModsConfig
@@ -45,139 +45,15 @@
 
         public IReadOnlyList<string> KnownExpansions => knownExpansions;
 
-        public List<RimMessage> Messages = [];
+        public RimMessageCollection Messages = [];
 
-        public int WarningsCount;
+        public int WarningsCount => Messages.WarningsCount;
 
-        public int ErrorsCount;
+        public int ErrorsCount => Messages.ErrorsCount;
 
         public void CheckForProblems()
         {
-            ClearMessages();
-            Dictionary<string, RimMod> packageIdToMod = new(StringComparer.OrdinalIgnoreCase);
-            foreach (var mod in activeMods)
-            {
-                packageIdToMod[mod.PackageId] = mod;
-            }
-            foreach (var mod in inactiveMods)
-            {
-                packageIdToMod[mod.PackageId] = mod;
-            }
-
-            HashSet<string> activeModsIds = new(StringComparer.OrdinalIgnoreCase);
-            foreach (var id in activeModIds)
-            {
-                activeModsIds.Add(id);
-            }
-
-            if (packageIdToMod.TryGetValue(RimMod.CorePackageId, out var coreMod) && !coreMod.IsActive)
-            {
-                AddMessage(coreMod, "Core mod not loaded.", RimSeverity.Error);
-            }
-
-            var currentVersion = RimVersion.ToCompareVersion();
-            foreach (var mod in activeMods)
-            {
-                mod.ClearMessages();
-                CheckGameVersion(currentVersion, mod);
-                CheckDependencies(currentVersion, activeModsIds, mod);
-                CheckIncompatibleMods(currentVersion, activeModsIds, packageIdToMod, mod);
-                CheckLoadOrder(activeMods, mod);
-            }
-        }
-
-        private void ClearMessages()
-        {
-            Messages.Clear();
-            WarningsCount = 0;
-            ErrorsCount = 0;
-        }
-
-        private void CheckGameVersion(RimVersion currentVersion, RimMod mod)
-        {
-            if (mod.Metadata.SupportedVersions.Count == 0) return;
-            bool supported = false;
-            foreach (var supportedVersion in mod.Metadata.SupportedVersions)
-            {
-                if (supportedVersion == currentVersion)
-                {
-                    supported = true;
-                }
-            }
-
-            if (!supported)
-            {
-                AddMessage(mod, "Incompatible game version.", RimSeverity.Warn);
-            }
-        }
-
-        private void CheckDependencies(RimVersion version, HashSet<string> activeModsIds, RimMod mod)
-        {
-            foreach (var deps in mod.Metadata.EnumerateDependencies(version))
-            {
-                if (!activeModsIds.Contains(deps.PackageId))
-                {
-                    AddMessage(mod, $"Mod depends on {deps.DisplayName} ({deps.PackageId}) but it's not loaded", RimSeverity.Error);
-                }
-            }
-        }
-
-        private void CheckIncompatibleMods(RimVersion version, HashSet<string> activeModsIds, Dictionary<string, RimMod> packageIdToMod, RimMod mod)
-        {
-            foreach (var incompatibleId in mod.Metadata.EnumerateIncompatibleWith(version))
-            {
-                if (activeModsIds.Contains(incompatibleId))
-                {
-                    AddMessage(mod, $"Mod is incompatible with {packageIdToMod[incompatibleId].Name}", RimSeverity.Error);
-                }
-            }
-        }
-
-        private void CheckLoadOrder(List<RimMod> activeMods, RimMod mod)
-        {
-            int index = activeMods.IndexOf(mod);
-            foreach (var reference in mod.LoadBefore)
-            {
-                int otherIndex = activeMods.IndexOf(reference.Mod);
-                if (otherIndex == -1) continue;
-                if (index > otherIndex)
-                {
-                    if (reference.Forced)
-                    {
-                        AddMessage(mod, $"Mod must load before {reference.Mod.Name} ({reference.Mod.PackageId})", RimSeverity.Error);
-                    }
-                    else
-                    {
-                        AddMessage(mod, $"Mod should load before {reference.Mod.Name} ({reference.Mod.PackageId})", RimSeverity.Warn);
-                    }
-                }
-            }
-
-            foreach (var reference in mod.LoadAfter)
-            {
-                int otherIndex = activeMods.IndexOf(reference.Mod);
-                if (otherIndex == -1) continue;
-                if (index < otherIndex)
-                {
-                    if (reference.Forced)
-                    {
-                        AddMessage(mod, $"Mod must load after {reference.Mod.Name} ({reference.Mod.PackageId})", RimSeverity.Error);
-                    }
-                    else
-                    {
-                        AddMessage(mod, $"Mod should load after {reference.Mod.Name} ({reference.Mod.PackageId})", RimSeverity.Warn);
-                    }
-                }
-            }
-        }
-
-        public void AddMessage(RimMod mod, string message, RimSeverity severity)
-        {
-            if (severity == RimSeverity.Warn) WarningsCount++;
-            if (severity == RimSeverity.Error) ErrorsCount++;
-            RimMessage msg = new(mod, message, severity);
-            Messages.Add(msg);
-            mod.AddMessage(message, severity);
+            ProblemChecker.CheckForProblems(Messages, activeMods, inactiveMods, activeModIds, RimVersion, true);
         }
 
         public void ActivateMod(RimMod mod)
@@ -288,22 +164,28 @@
             }
         }
 
-        private void PopulateList(RimModList modList)
+        public void Apply(RimProfile profile, RimModList mods)
+        {
+            Version = profile.Version;
+            activeModIds.Clear();
+            activeModIds.AddRange(profile.ActiveModIds);
+            knownExpansions.Clear();
+            knownExpansions.AddRange(profile.KnownExpansions);
+            PopulateList(mods);
+        }
+
+        public void PopulateList(RimModList modList)
         {
             inactiveMods.Clear();
             activeMods.Clear();
-            foreach (string modId in ActiveModIds)
+            foreach (string modId in activeModIds)
             {
-                if (modList.TryGetMod(modId, out var mod))
-                {
-                    activeMods.Add(mod);
-                }
-                else
+                if (!modList.TryGetMod(modId, out var mod))
                 {
                     mod = RimMod.CreateUnknown(modId);
-                    activeMods.Add(mod);
                 }
 
+                activeMods.Add(mod);
                 mod.IsActive = true;
             }
 
@@ -320,6 +202,7 @@
 
             var currentVersion = RimVersion.ToCompareVersion();
             ResolveModsDeps(currentVersion, modList, modList.PackageIdToMod, modList.SteamIdToMod);
+            CheckForProblems();
         }
 
         private static void ResolveModsDeps(RimVersion currentVersion, IEnumerable<RimMod> allMods, IReadOnlyDictionary<string, RimMod> packageIdToMod, IReadOnlyDictionary<long, RimMod> steamIdToMod)
