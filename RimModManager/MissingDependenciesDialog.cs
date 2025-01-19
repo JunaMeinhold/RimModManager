@@ -7,13 +7,13 @@
 
     public class MissingDependenciesDialog : Dialog
     {
-        private readonly ModsConfig modsConfig;
+        private readonly RimLoadOrder loadOrder;
         private readonly HashSet<RimMod> missingDependencies;
         private readonly HashSet<RimMod> toActivate = [];
 
-        public MissingDependenciesDialog(ModsConfig modsConfig, HashSet<RimMod> missingDependencies)
+        public MissingDependenciesDialog(RimLoadOrder loadOrder, HashSet<RimMod> missingDependencies)
         {
-            this.modsConfig = modsConfig;
+            this.loadOrder = loadOrder;
             this.missingDependencies = missingDependencies;
         }
 
@@ -68,7 +68,7 @@
 
             if (ImGui.Button("Select all & continue"u8))
             {
-                modsConfig.ActivateMods(missingDependencies);
+                loadOrder.ActivateMods(missingDependencies);
                 Close(DialogResult.Ok);
             }
 
@@ -76,7 +76,7 @@
 
             if (ImGui.Button("Select"u8))
             {
-                modsConfig.ActivateMods(toActivate);
+                loadOrder.ActivateMods(toActivate);
                 Close(DialogResult.Ok);
             }
 

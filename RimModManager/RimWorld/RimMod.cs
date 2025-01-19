@@ -34,7 +34,7 @@
 
         public string PreviewImagePath => System.IO.Path.Combine(Path ?? string.Empty, "About", "preview.png");
 
-        public RimMessageCollection Messages { get; set; } = [];
+        public RimMessageCollection Messages { get; set; } = new() { CountInactive = true };
 
         public bool HasWarnings => Messages.WarningsCount > 0;
 
@@ -75,6 +75,7 @@
             const uint red = 0xff0000ff;
 
             var draw = ImGui.GetWindowDrawList();
+            var style = ImGui.GetStyle();
 
             float lineHeight = ImGui.GetTextLineHeightWithSpacing();
             bool hoveredMessages = false;
@@ -82,6 +83,7 @@
             {
                 Vector2 max = ImGui.GetCursorScreenPos() + new Vector2(width, 0);
                 Vector2 min = max - new Vector2(0, lineHeight);
+                min.Y += style.ItemSpacing.Y * 0.5f;
 
                 if (Messages.ErrorsCount > 0)
                 {

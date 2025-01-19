@@ -20,7 +20,7 @@
         private readonly RimProfileManager profileManager = new();
 
         private RimModList? mods;
-        private ModsConfig? modsConfig;
+        private RimLoadOrder? loadOrder;
         private RimMod? selectedMod;
 
         private readonly Lock imageLock = new();
@@ -77,11 +77,11 @@
                 if (!config.CheckPaths()) return;
                 RimModLoader.RefreshMods(config);
                 mods = RimModLoader.Current;
-                modsConfig = ModsConfig.Load(config, mods);
-                modsConfig.CheckForProblems();
+                loadOrder = ModsConfig.Load(config, mods);
+                loadOrder.CheckForProblems();
 
-                inactiveFilterState = new(modsConfig.InactiveMods);
-                activeFilterState = new(modsConfig.ActiveMods);
+                inactiveFilterState = new(loadOrder.InactiveMods);
+                activeFilterState = new(loadOrder.ActiveMods);
             });
         }
 
@@ -148,9 +148,9 @@
                 }
                 if (ImGui.BeginMenu("Profiles"u8))
                 {
-                    if (ImGui.MenuItem("Create new"u8) && modsConfig != null)
+                    if (ImGui.MenuItem("Create new"u8) && loadOrder != null)
                     {
-                        profileManager.Create(modsConfig);
+                        profileManager.Create(loadOrder);
                     }
 
                     if (ImGui.MenuItem("Manage Profiles"u8) && mods != null)
@@ -161,9 +161,10 @@
 
                     foreach (var profile in profileManager.Profiles)
                     {
-                        if (ImGui.MenuItem(profile.Name) && modsConfig != null && mods != null)
+                        if (ImGui.MenuItem(profile.Name) && loadOrder != null && mods != null)
                         {
-                            modsConfig.Apply(profile, mods);
+                            ApplyProfileDialog dialog = new(profile, loadOrder, mods);
+                            dialog.Show();
                         }
                     }
 
@@ -208,7 +209,7 @@
                 ImGui.SameLine();
                 if (ImGui.Button("Clear"u8))
                 {
-                    modsConfig?.Clear();
+                    loadOrder?.Clear();
                     RefreshUI();
                 }
                 ImGui.SameLine();
@@ -217,10 +218,10 @@
                     Refresh();
                 }
                 ImGui.SameLine();
-                if (ImGui.Button("Sort"u8) && modsConfig != null && mods != null)
+                if (ImGui.Button("Sort"u8) && loadOrder != null && mods != null)
                 {
                     HashSet<RimMod>? missingMods = null;
-                    foreach (var mod in modsConfig.FindMissingDependencies(mods))
+                    foreach (var mod in loadOrder.FindMissingDependencies(mods))
                     {
                         missingMods ??= []; // lazy init.
                         missingMods.Add(mod);
@@ -228,7 +229,7 @@
 
                     if (missingMods != null)
                     {
-                        MissingDependenciesDialog dialog = new(modsConfig, missingMods);
+                        MissingDependenciesDialog dialog = new(loadOrder, missingMods);
                         dialog.Show((s, r) =>
                         {
                             if (r != DialogResult.Ok) return;
@@ -241,9 +242,9 @@
                     }
                 }
                 ImGui.SameLine();
-                if (ImGui.Button("Save"u8))
+                if (ImGui.Button("Save"u8) && loadOrder != null)
                 {
-                    modsConfig?.Save(config);
+                    ModsConfig.Save(config, loadOrder);
                 }
                 ImGui.SameLine();
                 if (ImGui.Button("Run"u8))
@@ -261,7 +262,7 @@
 
         private void Sort()
         {
-            modsConfig?.Sort();
+            loadOrder?.Sort();
             RefreshUI();
         }
 
@@ -383,7 +384,7 @@
 
         private unsafe void DisplayActive(ReadOnlySpan<byte> strId, ReadOnlySpan<byte> label, Vector2 size)
         {
-            if (!ImGui.BeginChild(strId, size) || activeFilterState == null || modsConfig == null)
+            if (!ImGui.BeginChild(strId, size) || activeFilterState == null || loadOrder == null)
             {
                 ImGui.EndChild();
                 return;
@@ -399,7 +400,7 @@
             avail.Y -= ImGui.GetTextLineHeightWithSpacing();
             DisplayMods(strId, label, activeFilterState.Mods, avail);
 
-            modsConfig.Messages.DrawBar(builder);
+            loadOrder.Messages.DrawBar(builder);
 
             ImGuiManager.PopFont();
             ImGui.EndChild();
@@ -430,7 +431,7 @@
 
         private unsafe void DisplayMods(ReadOnlySpan<byte> strId, ReadOnlySpan<byte> label, FilteredList<RimMod> mods, Vector2 size)
         {
-            if (!ImGui.BeginChild(strId, size, ImGuiChildFlags.FrameStyle) || modsConfig == null || inactiveFilterState == null || activeFilterState == null)
+            if (!ImGui.BeginChild(strId, size, ImGuiChildFlags.FrameStyle) || loadOrder == null || inactiveFilterState == null || activeFilterState == null)
             {
                 ImGui.EndChild();
                 return;
@@ -515,7 +516,7 @@
 
                         if (payload.IsDelivery())
                         {
-                            modsConfig.Move(mods[index], i);
+                            loadOrder.Move(mods[index], i);
                             RefreshUI();
                         }
                     }
@@ -529,11 +530,11 @@
                 {
                     if (mod.IsActive)
                     {
-                        modsConfig.DeactiveMod(mod);
+                        loadOrder.DeactiveMod(mod);
                     }
                     else
                     {
-                        modsConfig.ActivateMod(mod);
+                        loadOrder.ActivateMod(mod);
                     }
                     RefreshUI();
                 }

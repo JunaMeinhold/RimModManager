@@ -33,6 +33,8 @@
         public int ErrorsCount;
 
         internal bool AddMessagesToMods;
+        internal bool CountInactive;
+        internal bool HideInactiveModMessages;
 
         public unsafe void DrawBar(StrBuilder builder)
         {
@@ -88,21 +90,40 @@
 
         public void Add(RimMessage item)
         {
-            if (item.Severity == RimSeverity.Warn) WarningsCount++;
-            if (item.Severity == RimSeverity.Error) ErrorsCount++;
+            if (CountInactive || item.Mod.IsActive)
+            {
+                if (item.Severity == RimSeverity.Warn) WarningsCount++;
+                if (item.Severity == RimSeverity.Error) ErrorsCount++;
+            }
+
+            if (HideInactiveModMessages && !item.Mod.IsActive)
+            {
+                return;
+            }
+
             messages.Add(item);
         }
 
         public void AddMessage(RimMod mod, string message, RimSeverity severity)
         {
-            if (severity == RimSeverity.Warn) WarningsCount++;
-            if (severity == RimSeverity.Error) ErrorsCount++;
-            RimMessage msg = new(mod, message, severity);
-            messages.Add(msg);
+            if (CountInactive || mod.IsActive)
+            {
+                if (severity == RimSeverity.Warn) WarningsCount++;
+                if (severity == RimSeverity.Error) ErrorsCount++;
+            }
+
             if (AddMessagesToMods)
             {
                 mod.AddMessage(message, severity);
             }
+
+            if (HideInactiveModMessages && !mod.IsActive)
+            {
+                return;
+            }
+
+            RimMessage msg = new(mod, message, severity);
+            messages.Add(msg);
         }
 
         public void Clear()

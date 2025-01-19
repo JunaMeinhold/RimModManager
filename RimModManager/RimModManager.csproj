@@ -25,6 +25,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Hexa.NET.KittyUI" Version="1.1.2-rc8" />
+		<PackageReference Include="Steamworks.NET" Version="2024.8.0" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -38,6 +39,16 @@
 	  <None Update="database\db.json">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </None>
+	  <None Update="steam_api64.dll">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </None>
+	  <None Update="steam_appid.txt">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </None>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="RimWorld\Modpacks\" />
 	</ItemGroup>
 
 </Project>

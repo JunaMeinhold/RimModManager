@@ -12,5 +12,20 @@
             }
             return null;
         }
+
+        public static int IndexOf<T>(this IReadOnlyList<T> list, T item)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                T b = list[i];
+                if (item == null) continue;
+                if (item.Equals(b))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
     }
 }

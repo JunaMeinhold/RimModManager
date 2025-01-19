@@ -1,19 +1,23 @@
 ﻿namespace RimModManager.RimWorld.Profiles
 {
-    using Hexa.NET.D3DCommon;
+    using Hexa.NET.ImGui;
+    using Hexa.NET.KittyUI.ImGuiBackend;
+    using Hexa.NET.Utilities.Text;
+    using System.Numerics;
     using System.Xml;
 
     public class RimProfile
     {
-        private readonly List<string> activeModIds;
+        private readonly List<string> activeModOrder;
         private readonly List<string> knownExpansions;
         private readonly List<RimMod> activeMods;
+        private readonly HashSet<string> activeModIds = new(StringComparer.OrdinalIgnoreCase);
 
         public RimProfile()
         {
             Name = string.Empty;
             Version = string.Empty;
-            activeModIds = [];
+            activeModOrder = [];
             knownExpansions = [];
             activeMods = [];
         }
@@ -22,16 +26,16 @@
         {
             Name = name;
             Version = version;
-            this.activeModIds = activeModIds;
+            this.activeModOrder = activeModIds;
             this.knownExpansions = knownExpansions;
             activeMods = [];
         }
 
-        public RimProfile(string name, ModsConfig config)
+        public RimProfile(string name, RimLoadOrder config)
         {
             Name = name;
             Version = config.Version;
-            activeModIds = [.. config.ActiveModIds];
+            activeModOrder = [.. config.ActiveModsOrder];
             knownExpansions = [.. config.KnownExpansions];
             activeMods = [];
         }
@@ -42,13 +46,15 @@
 
         public RimVersion RimVersion => RimVersion.Parse(Version);
 
-        public IReadOnlyList<string> ActiveModIds => activeModIds;
+        public IReadOnlyList<string> ActiveModOrder => activeModOrder;
+
+        public IReadOnlySet<string> ActiveModIds => activeModIds;
 
         public IReadOnlyList<string> KnownExpansions => knownExpansions;
 
         public IReadOnlyList<RimMod> ActiveMods => activeMods;
 
-        public RimMessageCollection Messages { get; } = [];
+        public RimMessageCollection Messages { get; } = new() { HideInactiveModMessages = true, };
 
         public int WarningsCount => Messages.WarningsCount;
 
@@ -56,28 +62,36 @@
 
         public void PopulateList(RimModList mods)
         {
+            var clonedList = mods.Clone();
             activeMods.Clear();
-            foreach (string modId in activeModIds)
+            foreach (string modId in activeModOrder)
             {
-                if (!mods.TryGetMod(modId, out var mod))
+                if (!clonedList.TryGetMod(modId, out var mod))
                 {
                     mod = RimMod.CreateUnknown(modId);
                     AddMessage(mod, RimSeverity.Error, "Missing mod detected.");
                 }
-                else
-                {
-                    mod = mod.Clone(); // deep clone to avoid problems with the main list.
-                }
 
+                mod.IsActive = true;
+
+                activeModIds.Add(modId);
                 activeMods.Add(mod);
             }
 
-            CheckForProblems(mods);
+            foreach (var mod in clonedList)
+            {
+                if (!ActiveModIds.Contains(mod.PackageId))
+                {
+                    mod.IsActive = false;
+                }
+            }
+
+            CheckForProblems(clonedList);
         }
 
         public void CheckForProblems(RimModList mods)
         {
-            ProblemChecker.CheckForProblems(Messages, activeMods, mods.PackageIdToMod, activeModIds, RimVersion, true);
+            ProblemChecker.CheckForProblems(Messages, this, mods, RimVersion, true);
         }
 
         private void AddMessage(RimMod mod, RimSeverity severity, string message)
@@ -104,7 +118,7 @@
 
                 if (reader.NodeType == XmlNodeType.Element && reader.Name == "activeMods")
                 {
-                    profile.activeModIds.AddRange(ParseList(reader, "activeMods"));
+                    profile.activeModOrder.AddRange(ParseList(reader, "activeMods"));
                 }
 
                 if (reader.NodeType == XmlNodeType.Element && reader.Name == "knownExpansions")
@@ -143,7 +157,7 @@
             writer.WriteElementString("version", Version);
 
             writer.WriteStartElement("activeMods");
-            foreach (var mod in ActiveModIds)
+            foreach (var mod in ActiveModOrder)
             {
                 writer.WriteStartElement("li");
                 writer.WriteString(mod.ToLowerInvariant());
@@ -162,6 +176,67 @@
 
             writer.WriteEndElement(); // </ModManagerProfile>
             writer.WriteEndDocument();
+        }
+
+        public unsafe void DrawLoadOrder(StrBuilder builder)
+        {
+            ImGuiManager.PushFont("FA");
+
+            ImGui.Text("Name:"u8);
+            ImGui.SameLine();
+            ImGui.Text(Name);
+            ImGui.Text("Game Version:"u8);
+            ImGui.SameLine();
+            ImGui.Text(Version);
+            ImGui.Separator();
+
+            float lineHeight = ImGui.GetTextLineHeightWithSpacing();
+
+            if (ImGui.BeginTable("##Mods"u8, 2, ImGuiTableFlags.ScrollY | ImGuiTableFlags.ScrollX | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.Resizable | ImGuiTableFlags.Reorderable | ImGuiTableFlags.Hideable, new Vector2(0, -lineHeight)))
+            {
+                ImGui.TableSetupColumn("Index"u8);
+                ImGui.TableSetupColumn("Name"u8);
+
+                ImGui.TableSetupScrollFreeze(0, 1);
+                ImGui.TableHeadersRow();
+
+                for (int i = 0; i < ActiveMods.Count; i++)
+                {
+                    RimMod mod = ActiveMods[i];
+                    ImGui.TableNextRow();
+                    ImGui.TableSetColumnIndex(0);
+                    builder.Reset();
+                    builder.Append(i);
+                    builder.End();
+                    ImGui.Text(builder);
+
+                    ImGui.TableSetColumnIndex(1);
+                    var width = ImGui.GetContentRegionAvail().X;
+                    builder.Reset();
+                    builder.Append(mod.GetIcon());
+                    builder.End();
+                    ImGui.TextColored(mod.GetIconColor(), builder);
+
+                    ImGui.SameLine();
+
+                    ImGui.Selectable(mod.Name);
+
+                    bool hovered = ImGui.IsItemHovered();
+
+                    bool messagesHovered = mod.DrawMessages(builder, hovered, width);
+
+                    if (hovered && !messagesHovered)
+                    {
+                        mod.DrawTooltip(builder);
+                    }
+                }
+
+                ImGui.EndTable();
+            }
+
+            Messages.DrawBar(builder);
+
+            ImGuiManager.PopFont();
         }
     }
 }

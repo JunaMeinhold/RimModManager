@@ -197,6 +197,11 @@
             }
         }
 
+        public RimModList Clone()
+        {
+            return new(Mods.Select(x => x.Clone()).ToList());
+        }
+
         public IEnumerator<RimMod> GetEnumerator()
         {
             return new Enumerator(this);
