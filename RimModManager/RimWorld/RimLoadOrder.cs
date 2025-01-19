@@ -189,6 +189,18 @@
             CheckForProblems();
         }
 
+        public void ToggleMod(RimMod mod)
+        {
+            if (mod.IsActive)
+            {
+                DeactiveMod(mod);
+            }
+            else
+            {
+                ActivateMod(mod);
+            }
+        }
+
         public void DeactiveMod(RimMod mod)
         {
             if (!mod.IsActive) return;

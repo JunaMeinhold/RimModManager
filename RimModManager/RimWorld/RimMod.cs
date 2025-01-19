@@ -121,7 +121,7 @@
 
         public unsafe void DrawTooltip(StrBuilder builder)
         {
-            if (ImGui.BeginTooltip())
+            if (ImGui.BeginItemTooltip())
             {
                 ImGui.Text(BuildText(builder, "Name: "u8, Name));
                 ImGui.Text(BuildTextList(builder, "Author: "u8, Metadata.Authors));
@@ -130,6 +130,16 @@
                 ImGui.Text(BuildText(builder, "Path: "u8, Path!));
                 ImGui.EndTooltip();
             }
+        }
+
+        public StrBuilder BuildLabel(StrBuilder builder, int id)
+        {
+            builder.Reset();
+            builder.Append(Metadata.Name ?? Metadata.PackageId);
+            builder.Append("##"u8);
+            builder.Append(id);
+            builder.End();
+            return builder;
         }
 
         private static StrBuilder BuildText(StrBuilder builder, ReadOnlySpan<byte> label, string text)
@@ -159,6 +169,14 @@
 
             builder.End();
             return builder;
+        }
+
+        public unsafe void DrawIcon(StrBuilder builder)
+        {
+            builder.Reset();
+            builder.Append(GetIcon());
+            builder.End();
+            ImGui.TextColored(GetIconColor(), builder);
         }
 
         public void DrawContextMenu()

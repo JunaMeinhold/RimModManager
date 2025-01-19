@@ -35,6 +35,8 @@
         private Task? refreshTask;
 
         private bool refreshUI = false;
+        private int focusOnIndex = -1;
+        private FilteredList<RimMod>? focusOnTarget;
 
         public MainWindow()
         {
@@ -266,9 +268,11 @@
             RefreshUI();
         }
 
-        private void RefreshUI()
+        private void RefreshUI(int focusOnIndex = -1, FilteredList<RimMod>? focusOnTarget = null)
         {
             refreshUI = true;
+            this.focusOnIndex = focusOnIndex;
+            this.focusOnTarget = focusOnTarget;
         }
 
         private void DrawSelection(Vector2 size, RimMod? selectedMod)
@@ -288,16 +292,19 @@
             var avail = ImGui.GetContentRegionAvail();
 
             var imageContent = avail * new Vector2(1, 0.6f);
-
-            if (previewImage != null)
+            lock (imageLock)
             {
-                var cur = ImGui.GetCursorPos();
-                Vector2 imageSize = new(previewImage.Width, previewImage.Height);
-                Vector2 scale = imageContent / imageSize;
-                float scaleMin = Math.Min(scale.X, scale.Y);
-                ImGui.Image(previewImage, imageSize * scaleMin);
-                ImGui.SetCursorPos(cur);
+                if (previewImage != null)
+                {
+                    var cur = ImGui.GetCursorPos();
+                    Vector2 imageSize = new(previewImage.Width, previewImage.Height);
+                    Vector2 scale = imageContent / imageSize;
+                    float scaleMin = Math.Min(scale.X, scale.Y);
+                    ImGui.Image(previewImage, imageSize * scaleMin);
+                    ImGui.SetCursorPos(cur);
+                }
             }
+
             ImGui.Dummy(imageContent);
 
             ImGui.Separator();
@@ -460,82 +467,50 @@
             builder.End();
             float warnWidth = ImGui.CalcTextSize(buffer).X;
             var draw = ImGui.GetWindowDrawList();
+            ImGui.PushStyleColor(ImGuiCol.NavCursor, 0);
 
             for (int i = start; i < end; i++)
             {
                 var mod = mods[i];
 
                 var dropRectMin = ImGui.GetCursorScreenPos();
-                builder.Reset();
-                builder.Append(mod.GetIcon());
-                builder.End();
-                ImGui.TextColored(mod.GetIconColor(), builder);
+                mod.DrawIcon(builder);
                 ImGui.SameLine();
 
-                builder.Reset();
-                builder.Append(mod.Metadata.Name ?? mod.Metadata.PackageId);
-                builder.Append("##"u8);
-                builder.Append(i);
-                builder.End();
-
-                if (ImGui.Selectable(builder, SelectedMod == mod))
+                bool isSelected = SelectedMod == mod;
+                if (ImGui.Selectable(mod.BuildLabel(builder, i), isSelected))
                 {
                     SelectedMod = mod;
                 }
 
-                if (ImGui.BeginDragDropSource(ImGuiDragDropFlags.None))
+                if (i == focusOnIndex && focusOnTarget == mods)
                 {
-                    ImGui.SetDragDropPayload("RimMod"u8, &i, sizeof(int));
-                    builder.Reset();
-                    builder.Append(mod.GetIcon());
-                    builder.End();
-                    ImGui.TextColored(mod.GetIconColor(), builder);
-                    ImGui.SameLine();
-                    ImGui.Text(mod.Name);
-                    ImGui.EndDragDropSource();
+                    SelectedMod = mod;
+                    focusOnIndex = -1;
+                    focusOnTarget = null;
+                    ImGuiP.FocusItem();
                 }
 
-                if (ImGui.BeginDragDropTarget())
+                bool isFocused = ImGui.IsItemFocused();
+                if (isFocused)
                 {
-                    var payload = ImGui.AcceptDragDropPayload("RimMod"u8, ImGuiDragDropFlags.AcceptNoDrawDefaultRect | ImGuiDragDropFlags.AcceptBeforeDelivery);
-
-                    if (!payload.IsNull)
-                    {
-                        int index = *(int*)payload.Data;
-                        Vector2 dropRectMax = dropRectMin + new Vector2(avail.X, lineHeight);
-                        if (index > i)
-                        {
-                            dropRectMax.Y = dropRectMin.Y;
-                        }
-                        else
-                        {
-                            dropRectMin.Y = dropRectMax.Y;
-                        }
-
-                        draw.AddLine(dropRectMin, dropRectMax, ImGui.GetColorU32(ImGuiCol.DragDropTarget), 3.5f);
-
-                        if (payload.IsDelivery())
-                        {
-                            loadOrder.Move(mods[index], i);
-                            RefreshUI();
-                        }
-                    }
-                    ImGui.EndDragDropTarget();
+                    SelectedMod = mod;
                 }
+
+                if (isFocused && ImGuiP.IsKeyPressed(ImGuiKey.Enter))
+                {
+                    loadOrder.ToggleMod(mod);
+                    RefreshUI(i, mods);
+                }
+
+                HandleDragDrop(mods, ref builder, i, avail, lineHeight, ref draw, mod, dropRectMin);
 
                 mod.DrawContextMenu();
 
                 var hovered = ImGui.IsItemHovered();
                 if (hovered && ImGuiP.IsMouseDoubleClicked(ImGuiMouseButton.Left))
                 {
-                    if (mod.IsActive)
-                    {
-                        loadOrder.DeactiveMod(mod);
-                    }
-                    else
-                    {
-                        loadOrder.ActivateMod(mod);
-                    }
+                    loadOrder.ToggleMod(mod);
                     RefreshUI();
                 }
 
@@ -546,7 +521,7 @@
                     mod.DrawTooltip(builder);
                 }
             }
-
+            ImGui.PopStyleColor();
             int delta = mods.Count - end;
             if (delta > 0)
             {
@@ -554,6 +529,49 @@
             }
 
             ImGui.EndChild();
+        }
+
+        private unsafe void HandleDragDrop(FilteredList<RimMod> mods, ref StrBuilder builder, int i, Vector2 avail, float lineHeight, ref ImDrawListPtr draw, RimMod mod, Vector2 dropRectMin)
+        {
+            if (ImGui.BeginDragDropSource(ImGuiDragDropFlags.None))
+            {
+                ImGui.SetDragDropPayload("RimMod"u8, &i, sizeof(int));
+                builder.Reset();
+                builder.Append(mod.GetIcon());
+                builder.End();
+                ImGui.TextColored(mod.GetIconColor(), builder);
+                ImGui.SameLine();
+                ImGui.Text(mod.Name);
+                ImGui.EndDragDropSource();
+            }
+
+            if (ImGui.BeginDragDropTarget())
+            {
+                var payload = ImGui.AcceptDragDropPayload("RimMod"u8, ImGuiDragDropFlags.AcceptNoDrawDefaultRect | ImGuiDragDropFlags.AcceptBeforeDelivery);
+
+                if (!payload.IsNull)
+                {
+                    int index = *(int*)payload.Data;
+                    Vector2 dropRectMax = dropRectMin + new Vector2(avail.X, lineHeight);
+                    if (index > i)
+                    {
+                        dropRectMax.Y = dropRectMin.Y;
+                    }
+                    else
+                    {
+                        dropRectMin.Y = dropRectMax.Y;
+                    }
+
+                    draw.AddLine(dropRectMin, dropRectMax, ImGui.GetColorU32(ImGuiCol.DragDropTarget), 3.5f);
+
+                    if (payload.IsDelivery())
+                    {
+                        loadOrder!.Move(mods[index], i);
+                        RefreshUI();
+                    }
+                }
+                ImGui.EndDragDropTarget();
+            }
         }
 
         private static StrBuilder BuildLabel(StrBuilder builder, char icon)

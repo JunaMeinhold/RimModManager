@@ -23,7 +23,7 @@
 
         public override unsafe void DrawContent()
         {
-            ImGui.BeginChild("##SidePanel", new Vector2(split, 0));
+            ImGui.BeginChild("##SidePanel"u8, new Vector2(split, 0));
             var avail = ImGui.GetContentRegionAvail();
             if (ImGui.BeginListBox("##ProfilesList"u8, avail))
             {
@@ -41,7 +41,7 @@
 
             ImGuiSplitter.VerticalSplitter("Splitter"u8, ref split);
 
-            ImGui.BeginChild("##MainPanel");
+            ImGui.BeginChild("##MainPanel"u8);
 
             if (selectedProfile != null)
             {
