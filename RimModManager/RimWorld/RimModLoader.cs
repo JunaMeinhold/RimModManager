@@ -57,7 +57,7 @@
             var modManifest = LoadFluffyModManifest(modFolder);
             if (modMetadata != null)
             {
-                var mod = new RimMod
+                RimMod mod = new()
                 {
                     Kind = modKind,
                     Path = modFolder,
@@ -69,6 +69,8 @@
                 {
                     mod.SteamId = steamId;
                 }
+
+                UpdateModFlags(mod);
 
                 return mod;
             }
@@ -156,7 +158,7 @@
         {
             if (Directory.Exists(folderPath))
             {
-                foreach (var modFolder in Directory.GetDirectories(folderPath))
+                Parallel.ForEach(Directory.GetDirectories(folderPath), modFolder =>
                 {
                     if (existingMods.TryGetValue(modFolder, out var existingMod))
                     {
@@ -173,7 +175,7 @@
                             Current.Add(mod);
                         }
                     }
-                }
+                });
             }
         }
 
@@ -197,7 +199,18 @@
                 existingMod.FluffyManifest = modManifest;
             }
 
+            UpdateModFlags(existingMod);
+
             return true;
+        }
+
+        private static void UpdateModFlags(RimMod mod)
+        {
+            mod.Flags = ModFlags.None;
+            if (mod.Path != null && Directory.Exists(Path.Combine(mod.Path, ".git")))
+            {
+                mod.Flags |= ModFlags.Git;
+            }
         }
     }
 }

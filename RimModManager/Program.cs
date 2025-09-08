@@ -5,9 +5,10 @@ using System.Numerics;
 using System.Reflection;
 
 AppBuilder.Create()
-    .AddWindow<MainWindow>(show: true, mainWindow: true)
+    .AddWindow<MainWindow>()
     .AddTitleBar<TitleBar>()
     .EnableDebugTools(true)
+    .SetTitle("Rim Mod Manager")
     .AddFont(builder =>
     {
         var current = Assembly.GetExecutingAssembly();

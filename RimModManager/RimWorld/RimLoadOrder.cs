@@ -42,6 +42,8 @@
 
         public int WarningsCount => Messages.WarningsCount;
 
+        public RimModList ModList => modList;
+
         public void PopulateList(RimModList modList)
         {
             inactiveMods.Clear();
@@ -64,6 +66,7 @@
 
         private static void ResolveModsDeps(RimVersion currentVersion, IEnumerable<RimMod> allMods, IReadOnlyDictionary<string, RimMod> packageIdToMod, IReadOnlyDictionary<long, RimMod> steamIdToMod)
         {
+            var steamDatabase = SteamDatabase.Instance;
             var communityRules = RuleSet.CommunityRules;
             var customRules = RuleSet.CustomRules;
             foreach (var mod in allMods)
@@ -72,15 +75,14 @@
                 mod.LoadBefore.Clear();
 
                 mod.LoadAfter.AddRange(mod.Metadata.EnumerateDependenciesAsRef(currentVersion, packageIdToMod));
-                mod.LoadAfter.AddRange(SteamDatabase.Instance.EnumerateDependencies(mod, steamIdToMod));
-                mod.LoadBefore.AddRange(mod.Metadata.EnumerateLoadBefore(currentVersion, packageIdToMod));
                 mod.LoadAfter.AddRange(mod.Metadata.EnumerateLoadAfter(currentVersion, packageIdToMod));
-
-                mod.LoadBefore.AddRange(communityRules.EnumerateLoadBefore(mod, packageIdToMod));
+                mod.LoadAfter.AddRange(steamDatabase.EnumerateDependencies(mod, steamIdToMod));
                 mod.LoadAfter.AddRange(communityRules.EnumerateLoadAfter(mod, packageIdToMod));
-
-                mod.LoadBefore.AddRange(customRules.EnumerateLoadBefore(mod, packageIdToMod));
                 mod.LoadAfter.AddRange(customRules.EnumerateLoadAfter(mod, packageIdToMod));
+
+                mod.LoadBefore.AddRange(mod.Metadata.EnumerateLoadBefore(currentVersion, packageIdToMod));
+                mod.LoadBefore.AddRange(communityRules.EnumerateLoadBefore(mod, packageIdToMod));
+                mod.LoadBefore.AddRange(customRules.EnumerateLoadBefore(mod, packageIdToMod));
 
                 mod.LoadBottom = customRules.LoadBottom(mod) ?? communityRules.LoadBottom(mod);
             }
@@ -92,9 +94,8 @@
             {
                 mod = RimMod.CreateUnknown(packageId);
             }
-            if (mod.IsActive) return;
+            if (!activeModIds.Add(packageId)) return;
             activeModsOrder.Add(packageId);
-            activeModIds.Add(packageId);
             activeMods.Add(mod);
             inactiveMods.Remove(mod);
             mod.IsActive = true;
@@ -110,10 +111,8 @@
                 {
                     mod = RimMod.CreateUnknown(packageId);
                 }
-                if (mod.IsActive) continue;
-
+                if (!activeModIds.Add(packageId)) continue;
                 activeModsOrder.Add(packageId);
-                activeModIds.Add(packageId);
                 activeMods.Add(mod);
                 inactiveMods.Remove(mod);
                 mod.IsActive = true;
@@ -154,10 +153,10 @@
             Version = profile.Version;
             activeModsOrder.Clear();
             activeModIds.Clear();
+            activeMods.Clear();
             foreach (var packageId in profile.ActiveModOrder)
             {
-                activeModsOrder.Add(packageId);
-                activeModIds.Add(packageId);
+                ActivateMod(packageId);
             }
 
             knownExpansions.Clear();
@@ -203,10 +202,9 @@
 
         public void DeactiveMod(RimMod mod)
         {
-            if (!mod.IsActive) return;
+            if (!activeModIds.Remove(mod.PackageId)) return;
             RemoveId(mod.PackageId);
             activeMods.Remove(mod);
-            activeModIds.Remove(mod.PackageId);
             inactiveMods.Add(mod);
             mod.IsActive = false;
 
@@ -217,10 +215,9 @@
         {
             foreach (var mod in mods)
             {
-                if (!mod.IsActive) continue;
+                if (!activeModIds.Remove(mod.PackageId)) continue;
                 RemoveId(mod.PackageId);
                 activeMods.Remove(mod);
-                activeModIds.Remove(mod.PackageId);
                 inactiveMods.Add(mod);
                 mod.IsActive = false;
             }

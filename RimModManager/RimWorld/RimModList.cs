@@ -6,8 +6,8 @@
     public class RimModList : IList<RimMod>
     {
         private readonly List<RimMod> mods = [];
-        private readonly HashSet<string> modIds = [];
-        private readonly Dictionary<string, RimMod> packageIdToMod = [];
+        private readonly HashSet<string> modIds = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, RimMod> packageIdToMod = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<long, RimMod> steamIdToMod = [];
         private readonly Lock _lock = new();
 

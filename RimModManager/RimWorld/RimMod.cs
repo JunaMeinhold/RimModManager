@@ -2,8 +2,8 @@
 {
     using Hexa.NET.ImGui;
     using Hexa.NET.Mathematics;
+    using Hexa.NET.Utilities;
     using Hexa.NET.Utilities.Text;
-    using Newtonsoft.Json.Linq;
     using RimModManager.RimWorld.Fluffy;
     using RimModManager.RimWorld.Sorting;
     using System;
@@ -17,6 +17,16 @@
         public const string CorePackageId = "ludeon.rimworld";
 
         public ModKind Kind { get; set; }
+
+        public bool IsBaseMod => Kind == ModKind.Base;
+
+        public bool IsLocalMod => Kind == ModKind.Local;
+
+        public bool IsSteamMod => Kind == ModKind.Steam;
+
+        public ModFlags Flags { get; set; }
+
+        public bool IsUpdateAvailable => (Flags & ModFlags.UpdateAvailable) != 0;
 
         public bool IsActive { get; set; }
 
@@ -36,20 +46,23 @@
 
         public RimMessageCollection Messages { get; set; } = new() { CountInactive = true };
 
-        public bool HasWarnings => Messages.WarningsCount > 0;
+        public bool HasWarnings => Messages.WarningsCount != 0;
 
-        public bool HasErrors { get; set; }
+        public bool HasErrors => Messages.ErrorsCount != 0;
 
-        public List<ModReference> LoadBefore { get; private set; } = [];
+        public ModReferenceCollection LoadBefore { get; private set; } = [];
 
-        public List<ModReference> LoadAfter { get; private set; } = [];
+        public ModReferenceCollection LoadAfter { get; private set; } = [];
 
         IEnumerable<RimMod> INode<RimMod>.Dependencies => Dependencies;
 
         public bool? LoadBottom { get; set; }
 
-        public List<RimMod> Dependencies = [];
-        public List<RimMod> Dependants = [];
+        public List<RimMod> Dependencies { get; } = [];
+
+        public List<RimMod> Dependants { get; } = [];
+
+        public Dictionary<string, RimProperty> Properties { get; } = [];
 
         public RimMod Clone()
         {
@@ -68,11 +81,37 @@
             };
         }
 
+        public static unsafe bool LeafButton(byte* label, uint color, ref Vector2 cursor, float size)
+        {
+            return LeafButton(label, color, ref cursor, new Vector2(size));
+        }
+
+        public static unsafe bool LeafButton(byte* label, uint color, ref Vector2 cursor, Vector2 size)
+        {
+            var draw = ImGui.GetWindowDrawList();
+            cursor.X -= size.X;
+
+            ImRect rect = new(cursor, cursor + size);
+
+            var id = ImGui.GetID(label);
+            if (!ImGuiP.ItemAdd(rect, id))
+            {
+                return false;
+            }
+
+            var end = ImGuiP.FindRenderedTextEnd(label);
+            draw.AddText(cursor, color, label, end);
+            bool itemHovered = false, held = false;
+
+            return ImGuiP.ButtonBehavior(rect, id, ref itemHovered, ref held);
+        }
+
         public unsafe bool DrawMessages(StrBuilder builder, bool hovered, float width)
         {
             // ABGR
             const uint yellow = 0xff00ffff;
             const uint red = 0xff0000ff;
+            uint lightSkyBlue = Colors.LightSkyBlue.ToUIntABGR();
 
             var draw = ImGui.GetWindowDrawList();
             var style = ImGui.GetStyle();
@@ -89,30 +128,58 @@
                 {
                     builder.Reset();
                     builder.Append(FontAwesome.CircleExclamation);
+                    builder.Append("##"u8);
+                    builder.Append(PackageId);
                     builder.End();
-                    min.X -= lineHeight;
-                    draw.AddText(min, red, builder);
+
+                    LeafButton(builder, red, ref min, lineHeight);
+
+                    if (ImGui.IsItemHovered() && ImGui.BeginTooltip())
+                    {
+                        hoveredMessages = true;
+                        foreach (var mes in Messages)
+                        {
+                            if (mes.Severity != RimSeverity.Error) continue;
+                            ImGui.Text(mes.Message);
+                        }
+                        ImGui.EndTooltip();
+                    }
                 }
 
                 if (Messages.WarningsCount > 0)
                 {
                     builder.Reset();
                     builder.Append(FontAwesome.Warning);
+                    builder.Append("##"u8);
+                    builder.Append(PackageId);
                     builder.End();
-                    min.X -= lineHeight;
-                    draw.AddText(min, yellow, builder);
-                }
 
-                hoveredMessages = ImGui.IsMouseHoveringRect(min, max);
-                if (hovered && hoveredMessages)
-                {
-                    if (ImGui.BeginTooltip())
+                    LeafButton(builder, yellow, ref min, lineHeight);
+                    if (ImGui.IsItemHovered() && ImGui.BeginTooltip())
                     {
+                        hoveredMessages = true;
                         foreach (var mes in Messages)
                         {
+                            if (mes.Severity != RimSeverity.Warn) continue;
                             ImGui.Text(mes.Message);
                         }
                         ImGui.EndTooltip();
+                    }
+                }
+
+                if (IsUpdateAvailable)
+                {
+                    builder.Reset();
+                    builder.Append(FontAwesome.Download);
+                    builder.Append("##"u8);
+                    builder.Append(PackageId);
+                    builder.End();
+
+                    LeafButton(builder, lightSkyBlue, ref min, lineHeight);
+                    if (ImGui.IsItemHovered())
+                    {
+                        hoveredMessages = true;
+                        ImGui.SetTooltip("Updates available!");
                     }
                 }
             }
@@ -127,7 +194,11 @@
                 ImGui.Text(BuildTextList(builder, "Author: "u8, Metadata.Authors));
                 ImGui.Text(BuildText(builder, "PackageID: "u8, PackageId));
                 ImGui.Text(BuildText(builder, "Version: "u8, Metadata.ModVersion ?? "Unknown"));
-                ImGui.Text(BuildText(builder, "Path: "u8, Path!));
+                if (Kind != ModKind.Unknown)
+                {
+                    ImGui.Text(BuildText(builder, "Path: "u8, Path!));
+                }
+
                 ImGui.EndTooltip();
             }
         }
@@ -179,7 +250,7 @@
             ImGui.TextColored(GetIconColor(), builder);
         }
 
-        public void DrawContextMenu()
+        public void DrawContextMenu(RimLoadOrder loadOrder)
         {
             if (!ImGui.BeginPopupContextItem())
             {
@@ -212,6 +283,12 @@
                 {
                     OpenUrl($"steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id={SteamId.Value}");
                 }
+            }
+
+            if (ImGui.MenuItem("Edit Rules"))
+            {
+                ModRuleDialog dialog = new(this, loadOrder);
+                dialog.Show();
             }
 
             ImGui.EndPopup();
@@ -325,27 +402,6 @@
         public override string ToString()
         {
             return $"{Name} ({PackageId})";
-        }
-    }
-
-    public enum RimSeverity
-    {
-        Info,
-        Warn,
-        Error,
-    }
-
-    public struct RimMessage
-    {
-        public RimMod Mod;
-        public string Message;
-        public RimSeverity Severity;
-
-        public RimMessage(RimMod mod, string message, RimSeverity severity)
-        {
-            Mod = mod;
-            Message = message;
-            Severity = severity;
         }
     }
 }

@@ -58,7 +58,7 @@
 
                 bool hovered = ImGui.IsItemHovered();
 
-                mod.DrawContextMenu();
+                mod.DrawContextMenu(loadOrder);
 
                 if (hovered)
                 {

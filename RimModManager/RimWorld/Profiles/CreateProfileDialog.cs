@@ -40,7 +40,7 @@
                 Close(DialogResult.Cancel);
             }
             ImGui.SameLine();
-            if (ImGui.Button("Create"u8) || ImGuiP.IsKeyPressed(ImGuiKey.Enter))
+            if (ImGui.Button("Create"u8) || ImGui.IsKeyPressed(ImGuiKey.Enter))
             {
                 if (ValidateProfileName())
                 {
@@ -48,7 +48,7 @@
                 }
             }
 
-            if (ImGuiP.IsKeyPressed(ImGuiKey.Escape))
+            if (ImGui.IsKeyPressed(ImGuiKey.Escape))
             {
                 Close(DialogResult.Cancel);
             }

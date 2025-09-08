@@ -2,7 +2,6 @@
 {
     using Hexa.NET.ImGui;
     using Hexa.NET.ImGui.Widgets;
-    using Hexa.NET.ImGui.Widgets.Dialogs;
     using Hexa.NET.Logging;
     using Hexa.NET.Mathematics;
     using Hexa.NET.Utilities.Text;
@@ -20,7 +19,7 @@
         private readonly Lock _lock = new();
         private readonly List<LogMessage> messages = [];
 
-        protected override string Name { get; } = "Optimize Textures";
+        public override string Name { get; } = "Optimize Textures";
 
         public OptimizeTexturesWindow(RimModManagerConfig config)
         {

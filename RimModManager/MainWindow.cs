@@ -2,13 +2,13 @@
 {
     using Hexa.NET.ImGui;
     using Hexa.NET.ImGui.Widgets;
-    using Hexa.NET.ImGui.Widgets.Dialogs;
+    using Hexa.NET.KittyUI;
     using Hexa.NET.KittyUI.Graphics;
     using Hexa.NET.KittyUI.ImGuiBackend;
-    using Hexa.NET.Mathematics;
     using Hexa.NET.Utilities.Text;
     using RimModManager.RimWorld;
     using RimModManager.RimWorld.Profiles;
+    using RimModManager.Steam;
     using RimModManager.TextureOptimizer;
     using System;
     using System.Collections.Generic;
@@ -18,6 +18,7 @@
     {
         private readonly RimModManagerConfig config;
         private readonly RimProfileManager profileManager = new();
+        private readonly RimModUpdater updater = new();
 
         private RimModList? mods;
         private RimLoadOrder? loadOrder;
@@ -40,6 +41,7 @@
 
         public MainWindow()
         {
+            IsEmbedded = true;
             Flags |= ImGuiWindowFlags.MenuBar;
             config = RimModManagerConfig.Load(out var isNew);
             if (isNew)
@@ -51,7 +53,7 @@
                 else
                 {
                     SelectPathDialog dialog = new(config);
-                    dialog.Show((s, r) => { Refresh(); });
+                    dialog.Show((s, r) => { Refresh(true); });
                 }
             }
             else
@@ -65,13 +67,13 @@
                     else
                     {
                         SelectPathDialog dialog = new(config);
-                        dialog.Show((s, r) => { Refresh(); });
+                        dialog.Show((s, r) => { Refresh(true); });
                     }
                 }
             }
         }
 
-        private void Refresh()
+        private void Refresh(bool restore)
         {
             if (refreshTask != null && !refreshTask.IsCompleted) return;
             refreshTask = Task.Run(() =>
@@ -79,11 +81,20 @@
                 if (!config.CheckPaths()) return;
                 RimModLoader.RefreshMods(config);
                 mods = RimModLoader.Current;
-                loadOrder = ModsConfig.Load(config, mods);
-                loadOrder.CheckForProblems();
+                if (restore)
+                {
+                    loadOrder = ModsConfig.Load(config, mods);
+                    loadOrder.CheckForProblems();
+                }
+                else
+                {
+                    loadOrder!.PopulateList(mods);
+                    loadOrder.CheckForProblems();
+                }
 
                 inactiveFilterState = new(loadOrder.InactiveMods);
                 activeFilterState = new(loadOrder.ActiveMods);
+                selectedMod = null;
             });
         }
 
@@ -120,11 +131,11 @@
             }
         }
 
-        protected override string Name { get; } = "Main Window";
+        public override string Name { get; } = "Main Window";
 
         public override void Init()
         {
-            Refresh();
+            Refresh(true);
         }
 
         public override void Dispose()
@@ -137,17 +148,47 @@
 
         public override unsafe void DrawContent()
         {
+            byte* buffer = stackalloc byte[2048];
+            StrBuilder builder = new(buffer, 2048);
+
             var avail = ImGui.GetContentRegionAvail();
 
             if (ImGui.BeginMenuBar())
             {
                 if (ImGui.BeginMenu("File"u8))
                 {
+                    if (ImGui.MenuItem("Settings"u8))
+                    {
+                        new SettingsWindow(config).Show();
+                    }
+                    if (ImGui.MenuItem("Exit"u8))
+                    {
+                        Close();
+                        Application.Exit();
+                    }
                     ImGui.EndMenu();
                 }
-                if (ImGui.MenuItem("Edit"u8))
+
+                if (ImGui.BeginMenu("Edit"u8))
                 {
+                    ImGuiManager.PushFont("FA");
+                    if (ImGui.MenuItem(builder.BuildLabel(FontAwesome.Steam, " Browse Workshop"u8)))
+                    {
+                        new SteamWorkshopBrowser().Show();
+                    }
+                    ImGuiManager.PopFont();
+                    ImGui.EndMenu();
                 }
+
+                if (ImGui.BeginMenu("Updates"u8))
+                {
+                    if (ImGui.MenuItem("Check for updates"u8))
+                    {
+                        updater.CheckForUpdatesAsync(mods, default);
+                    }
+                    ImGui.EndMenu();
+                }
+
                 if (ImGui.BeginMenu("Profiles"u8))
                 {
                     if (ImGui.MenuItem("Create new"u8) && loadOrder != null)
@@ -166,7 +207,11 @@
                         if (ImGui.MenuItem(profile.Name) && loadOrder != null && mods != null)
                         {
                             ApplyProfileDialog dialog = new(profile, loadOrder, mods);
-                            dialog.Show();
+                            dialog.Show((d, r) =>
+                            {
+                                loadOrder.CheckForProblems();
+                                RefreshUI();
+                            });
                         }
                     }
 
@@ -174,7 +219,7 @@
                 }
                 if (ImGui.MenuItem("Textures"u8))
                 {
-                    WidgetManager.Register(new OptimizeTexturesWindow(config), true);
+                    new OptimizeTexturesWindow(config).Show();
                 }
                 if (ImGui.MenuItem("Help"u8))
                 {
@@ -201,12 +246,10 @@
                 DisplayActive("##LoadOrder"u8, "Active"u8, new(0, -height));
 
                 ImGui.BeginChild("dawd"u8);
-                byte* buffer = stackalloc byte[2048];
-                StrBuilder builder = new(buffer, 2048);
 
                 if (ImGui.Button(BuildLabel(builder, MaterialIcons.Refresh)))
                 {
-                    Refresh();
+                    Refresh(false);
                 }
                 ImGui.SameLine();
                 if (ImGui.Button("Clear"u8))
@@ -217,7 +260,7 @@
                 ImGui.SameLine();
                 if (ImGui.Button("Restore"u8))
                 {
-                    Refresh();
+                    Refresh(true);
                 }
                 ImGui.SameLine();
                 if (ImGui.Button("Sort"u8) && loadOrder != null && mods != null)
@@ -234,7 +277,6 @@
                         MissingDependenciesDialog dialog = new(loadOrder, missingMods);
                         dialog.Show((s, r) =>
                         {
-                            if (r != DialogResult.Ok) return;
                             Sort();
                         });
                     }
@@ -275,7 +317,7 @@
             this.focusOnTarget = focusOnTarget;
         }
 
-        private void DrawSelection(Vector2 size, RimMod? selectedMod)
+        private unsafe void DrawSelection(Vector2 size, RimMod? selectedMod)
         {
             if (!ImGui.BeginChild("Selection"u8, size, ImGuiChildFlags.None, ImGuiWindowFlags.HorizontalScrollbar))
             {
@@ -321,7 +363,7 @@
 
             if (selectedMod.Metadata.Description != null)
             {
-                ImGui.Text(selectedMod.Metadata.Description);
+                ImGuiP.TextEx(selectedMod.Metadata.Description);
             }
 
             ImGui.EndChild();
@@ -451,11 +493,11 @@
             var scroll = ImGui.GetScrollY();
             var lineHeight = ImGui.GetTextLineHeightWithSpacing();
 
-            int start = (int)Math.Floor(scroll / lineHeight) - 1;
-            int end = (int)Math.Ceiling(avail.Y / lineHeight) + start + 2;
+            int start = (int)Math.Floor(scroll / lineHeight);
+            int end = (int)Math.Ceiling(avail.Y / lineHeight) + start;
 
-            start = Math.Max(start, 0);
-            end = Math.Min(end, mods.Count);
+            start = Math.Max(start - 1, 0);
+            end = Math.Min(end + 1, mods.Count);
 
             if (start > 0)
             {
@@ -478,6 +520,7 @@
                 ImGui.SameLine();
 
                 bool isSelected = SelectedMod == mod;
+                ImGui.SetNextItemAllowOverlap();
                 if (ImGui.Selectable(mod.BuildLabel(builder, i), isSelected))
                 {
                     SelectedMod = mod;
@@ -497,7 +540,7 @@
                     SelectedMod = mod;
                 }
 
-                if (isFocused && ImGuiP.IsKeyPressed(ImGuiKey.Enter))
+                if (isFocused && ImGui.IsKeyPressed(ImGuiKey.Enter))
                 {
                     loadOrder.ToggleMod(mod);
                     RefreshUI(i, mods);
@@ -505,10 +548,10 @@
 
                 HandleDragDrop(mods, ref builder, i, avail, lineHeight, ref draw, mod, dropRectMin);
 
-                mod.DrawContextMenu();
+                mod.DrawContextMenu(loadOrder);
 
                 var hovered = ImGui.IsItemHovered();
-                if (hovered && ImGuiP.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                if (hovered && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
                 {
                     loadOrder.ToggleMod(mod);
                     RefreshUI();

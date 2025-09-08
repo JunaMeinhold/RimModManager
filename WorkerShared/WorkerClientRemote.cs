@@ -1,5 +1,6 @@
 ﻿namespace WorkerShared
 {
+    using Hexa.NET.Logging;
     using System;
     using System.Buffers;
     using System.Net.Sockets;
@@ -88,6 +89,7 @@
 
                 if (lastReceivedHeartbeat < heartbeat.Timestamp)
                 {
+                    LoggerFactory.General.Warn("Worker missed Heartbeat, Terminating...");
                     Terminate();
                 }
             }

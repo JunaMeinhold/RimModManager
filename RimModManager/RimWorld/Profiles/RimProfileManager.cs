@@ -104,7 +104,7 @@
 
         public void OpenProfileManager(RimModList mods)
         {
-            WidgetManager.Register(new ManageProfilesWindow(this, mods), true);
+            new ManageProfilesWindow(this, mods).Show();
         }
     }
 }

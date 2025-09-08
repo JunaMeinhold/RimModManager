@@ -19,7 +19,7 @@
             this.mods = mods;
         }
 
-        protected override string Name { get; } = "Manage Profiles";
+        public override string Name { get; } = "Manage Profiles";
 
         public override unsafe void DrawContent()
         {

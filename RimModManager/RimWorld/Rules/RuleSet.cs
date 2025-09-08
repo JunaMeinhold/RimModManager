@@ -1,58 +1,27 @@
 ﻿namespace RimModManager.RimWorld.Rules
 {
-    using Newtonsoft.Json;
     using RimModManager.RimWorld;
+    using System.Text.Json;
+    using System.Text.Json.Serialization;
 
     public class RuleSet
     {
-        public int Timestamp { get; set; }
+        private ModReferenceSource referenceSource;
 
+        [JsonPropertyName("timestamp")]
+        public long Timestamp { get; set; }
+
+        [JsonPropertyName("rules")]
+        [JsonConverter(typeof(RulesConverter))]
         public Dictionary<string, Rule> Rules { get; set; } = [];
 
-        public static RuleSet Load(string path)
+        public static RuleSet Load(string path, ModReferenceSource referenceSource)
         {
             if (!File.Exists(path)) return new();
             using var fs = File.OpenRead(path);
-            JsonTextReader reader = new(new StreamReader(fs));
-
-            RuleSet set = new();
-            while (reader.Read() && reader.TokenType != JsonToken.EndObject)
-            {
-                if (reader.TokenType == JsonToken.PropertyName)
-                {
-                    var prop = (string?)reader.Value;
-
-                    if (prop == "timestamp")
-                    {
-                        set.Timestamp = reader.ReadAsInt32() ?? 0;
-                    }
-                    else if (prop == "rules")
-                    {
-                        set.Rules = LoadRulesSection(reader);
-                    }
-                }
-            }
-
+            var set = JsonSerializer.Deserialize(fs, RuleSetSourceGenerationContext.Default.RuleSet)!;
+            set.referenceSource = referenceSource;
             return set;
-        }
-
-        private static Dictionary<string, Rule> LoadRulesSection(JsonTextReader reader)
-        {
-            Dictionary<string, Rule> rules = new(StringComparer.OrdinalIgnoreCase);
-
-            while (reader.Read() && reader.TokenType != JsonToken.EndObject)
-            {
-                if (reader.TokenType == JsonToken.PropertyName)
-                {
-                    var ruleKey = (string?)reader.Value!;
-                    var rule = new Rule();
-                    rule.Read(reader);
-
-                    rules[ruleKey] = rule;
-                }
-            }
-
-            return rules;
         }
 
         public void Write(string path)
@@ -67,7 +36,7 @@
         {
             get
             {
-                return communityRules ??= Load("database/communityRules.json");
+                return communityRules ??= Load("database/communityRules.json", ModReferenceSource.CommunityRules);
             }
         }
 
@@ -75,7 +44,7 @@
         {
             get
             {
-                return customRules ??= Load("database/customRules.json");
+                return customRules ??= Load("database/customRules.json", ModReferenceSource.CustomRules);
             }
         }
 
@@ -85,7 +54,7 @@
             {
                 foreach (var before in rule.LoadBefore)
                 {
-                    yield return ModReference.BuildRef(before.Key, packageIdToMod, ModReferenceDirection.LoadBefore, false);
+                    yield return ModReference.BuildRef(before.Key, packageIdToMod, ModReferenceDirection.LoadBefore, referenceSource, false);
                 }
             }
         }
@@ -96,7 +65,7 @@
             {
                 foreach (var before in rule.LoadAfter)
                 {
-                    yield return ModReference.BuildRef(before.Key, packageIdToMod, ModReferenceDirection.LoadAfter, false);
+                    yield return ModReference.BuildRef(before.Key, packageIdToMod, ModReferenceDirection.LoadAfter, referenceSource, false);
                 }
             }
         }

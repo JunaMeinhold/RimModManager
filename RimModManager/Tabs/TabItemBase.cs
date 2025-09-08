@@ -78,7 +78,7 @@
             var hovered = ImGuiP.ItemHoverable(rect, id, ImGuiItemFlags.None);
 
             bool result = false;
-            if (hovered && ImGuiP.IsMouseClicked(ImGuiMouseButton.Left))
+            if (hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
             {
                 result = true;
             }

@@ -12,6 +12,7 @@
             { "ludeon.rimworld.ideology", "Ideology" },
             { "ludeon.rimworld.biotech", "Biotech" },
             { "ludeon.rimworld.anomaly", "Anomaly" },
+            { "ludeon.rimworld.odyssey", "Odyssey" },
         };
 
         public string PackageId { get; set; }
@@ -137,14 +138,14 @@
         {
             foreach (var item in ModDependencies)
             {
-                yield return ModReference.BuildRef(item.PackageId, packageIdToMod, ModReferenceDirection.LoadAfter, true);
+                yield return ModReference.BuildRef(item.PackageId, packageIdToMod, ModReferenceDirection.LoadAfter, ModReferenceSource.ModMetadata, true);
             }
 
             if (ModDependenciesByVersion.TryGetValue(version, out var modDependencies))
             {
                 foreach (var item in modDependencies)
                 {
-                    yield return ModReference.BuildRef(item.PackageId, packageIdToMod, ModReferenceDirection.LoadAfter, true);
+                    yield return ModReference.BuildRef(item.PackageId, packageIdToMod, ModReferenceDirection.LoadAfter, ModReferenceSource.ModMetadata, true);
                 }
             }
         }
@@ -153,20 +154,20 @@
         {
             foreach (var item in LoadBefore)
             {
-                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadBefore, false);
+                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadBefore, ModReferenceSource.ModMetadata, false);
             }
 
             if (LoadBeforeByVersion.TryGetValue(version, out var loadBefore))
             {
                 foreach (var item in loadBefore)
                 {
-                    yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadBefore, false);
+                    yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadBefore, ModReferenceSource.ModMetadata, false);
                 }
             }
 
             foreach (var item in ForceLoadBefore)
             {
-                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadBefore, true);
+                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadBefore, ModReferenceSource.ModMetadata, true);
             }
         }
 
@@ -174,20 +175,20 @@
         {
             foreach (var item in LoadAfter)
             {
-                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadAfter, false);
+                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadAfter, ModReferenceSource.ModMetadata, false);
             }
 
             if (LoadAfterByVersion.TryGetValue(version, out var loadBefore))
             {
                 foreach (var item in loadBefore)
                 {
-                    yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadAfter, false);
+                    yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadAfter, ModReferenceSource.ModMetadata, false);
                 }
             }
 
             foreach (var item in ForceLoadAfter)
             {
-                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadAfter, true);
+                yield return ModReference.BuildRef(item, packageIdToMod, ModReferenceDirection.LoadAfter, ModReferenceSource.ModMetadata, true);
             }
         }
 
@@ -200,7 +201,7 @@
             {
                 PackageId = root.Element("packageId")?.Value ?? throw new FormatException("Mod metadata must have a packageId"),
                 Name = root.Element("name")?.Value!,
-                Description = root.Element("description")?.Value!,
+                Description = root.Element("description")?.Value?.Trim()!,
                 ModVersion = root.Element("modVersion")?.Value!,
                 ModIconPath = root.Element("modIconPath")?.Value!,
                 Url = root.Element("url")?.Value!

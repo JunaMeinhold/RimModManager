@@ -108,7 +108,6 @@ namespace WorkerShared
             {
                 await stream.ReadExactlyAsync(message.Data, cancellationToken);
             }
-            Console.WriteLine($"Received message: {message.Type}, {message.Length}");
             return message;
         }
 

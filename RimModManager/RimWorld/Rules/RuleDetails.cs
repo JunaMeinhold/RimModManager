@@ -1,49 +1,65 @@
 ﻿namespace RimModManager.RimWorld.Rules
 {
-    using Newtonsoft.Json;
+    using Hexa.NET.KittyUI.Debugging;
+    using System;
+    using System.Collections.Generic;
+    using System.Text.Json;
+    using System.Text.Json.Serialization;
 
     public class RuleDetails
     {
+        [JsonPropertyName("name")]
+        [JsonConverter(typeof(TextConverter))]
         public List<string> Name { get; set; } = [];
 
+        [JsonPropertyName("comment")]
+        [JsonConverter(typeof(TextConverter))]
         public List<string> Comment { get; set; } = [];
+    }
 
-        public void Read(JsonTextReader reader)
+    public class TextConverter : JsonConverter<List<string>>
+    {
+        public override List<string>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            while (reader.Read() && reader.TokenType != JsonToken.EndObject)
-            {
-                if (reader.TokenType == JsonToken.PropertyName)
-                {
-                    var prop = (string?)reader.Value;
+            List<string> texts = [];
 
-                    if (prop == "name")
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.String:
+                    texts.Add(reader.GetString()!);
+                    break;
+
+                case JsonTokenType.StartArray:
+                    while (reader.Read())
                     {
-                        Name = ReadStringList(reader);
+                        if (reader.TokenType == JsonTokenType.EndArray)
+                        {
+                            return texts;
+                        }
+
+                        if (reader.TokenType != JsonTokenType.String)
+                        {
+                            throw new JsonException("Expected String token");
+                        }
+
+                        texts.Add(reader.GetString()!);
                     }
-                    else if (prop == "comment")
-                    {
-                        Comment = ReadStringList(reader);
-                    }
-                }
+                    break;
             }
+
+            return texts;
         }
 
-        private static List<string> ReadStringList(JsonTextReader reader)
+        public override void Write(Utf8JsonWriter writer, List<string> value, JsonSerializerOptions options)
         {
-            var list = new List<string>();
+            writer.WriteStartArray();
 
-            if (reader.Read() && reader.TokenType == JsonToken.StartArray)
+            for (int i = 0; i < value.Count; i++)
             {
-                while (reader.Read() && reader.TokenType != JsonToken.EndArray)
-                {
-                    if (reader.TokenType == JsonToken.String)
-                    {
-                        list.Add((string?)reader.Value ?? string.Empty);
-                    }
-                }
+                writer.WriteStringValue(value[i]);
             }
 
-            return list;
+            writer.WriteEndArray();
         }
     }
 }

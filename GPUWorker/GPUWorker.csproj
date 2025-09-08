@@ -10,10 +10,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Hexa.NET.KittyUI" Version="1.1.2-rc8" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<ProjectReference Include="..\WorkerShared\WorkerShared.csproj" />
 	</ItemGroup>
 
