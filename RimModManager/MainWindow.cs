@@ -373,7 +373,11 @@
             ImGui.Text("Name: "u8);
             ImGui.SameLine();
             ImGui.Text(selectedMod.Metadata.Name ?? "<unknown>");
-            ImGui.TextLinkOpenURL(selectedMod.Path, selectedMod.Path);
+            if (selectedMod.Path != null)
+            {
+                ImGui.TextLinkOpenURL(selectedMod.Path, selectedMod.Path);
+            }
+
             ImGui.Text("Package Id: "u8);
             ImGui.SameLine();
             ImGui.Text(selectedMod.PackageId);

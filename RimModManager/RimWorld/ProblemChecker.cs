@@ -103,9 +103,9 @@
         {
             foreach (var incompatibleId in mod.Metadata.EnumerateIncompatibleWith(version))
             {
-                if (loadOrder.Contains(incompatibleId))
+                if (loadOrder.Contains(incompatibleId) && packageIdToMod.TryGetValue(incompatibleId, out var rimMod))
                 {
-                    messages.AddMessage(mod, $"Mod is incompatible with {packageIdToMod[incompatibleId].Name}", RimSeverity.Error);
+                    messages.AddMessage(mod, $"Mod is incompatible with {rimMod.Name}", RimSeverity.Error);
                 }
             }
         }
