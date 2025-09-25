@@ -8,9 +8,11 @@
     using Hexa.NET.Utilities.Text;
     using RimModManager.RimWorld;
     using RimModManager.RimWorld.Profiles;
+
 #if BUILD_STEAM_BROWSER
     using RimModManager.Steam;
 #endif
+
     using RimModManager.TextureOptimizer;
     using System;
     using System.Collections.Generic;
@@ -74,8 +76,6 @@
                 }
             }
         }
-
-     
 
         private void Refresh(bool restore)
         {
@@ -193,7 +193,15 @@
                 {
                     if (ImGui.MenuItem("Check for updates"u8))
                     {
-                        updater.CheckForUpdatesAsync(mods, default);
+                        ToastMessage message = new("Checking for Updates", flags: ToastMessageFlags.Spinner);
+                        message.Show();
+                        updater.CheckForUpdatesAsync(mods, message, default).ContinueWith(x => message.Close());
+                    }
+                    if (ImGui.MenuItem("Update mods"u8))
+                    {
+                        ToastMessage message = new("Updating mods", flags: ToastMessageFlags.Spinner);
+                        message.Show();
+                        updater.UpdateModsAsync(mods, message, default).ContinueWith(x => message.Close());
                     }
                     ImGui.EndMenu();
                 }
@@ -311,6 +319,8 @@
 
             ImGuiSplitter.VerticalSplitter("SplitA"u8, ref splitA, 100, avail.X - 100);
             DrawSelection(new(0, 0), selectedMod);
+
+            ToastManager.Draw();
         }
 
         private void Sort()

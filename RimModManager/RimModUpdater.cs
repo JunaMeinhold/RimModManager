@@ -23,27 +23,51 @@
         private CancellationToken cancellationToken;
         private bool isBusy;
         private int availableUpdates = -1;
+        private int processed = 0;
+        private int totalTasks = 0;
 
         public int MaxConcurrentTasks { get; set; } = 8;
 
-        public async Task<CheckForUpdateResult> CheckForUpdatesAsync(RimModList mods, CancellationToken token)
+        public async Task<CheckForUpdateResult> CheckForUpdatesAsync(RimModList mods, IProgress<float>? progress = null, CancellationToken token = default)
         {
             if (isBusy) return CheckForUpdateResult.Busy;
             isBusy = true;
+            processed = 0;
 
             try
             {
                 cancellationToken = token;
                 foreach (var mod in mods)
                 {
-                    queue.Enqueue(mod);
+                    if (mod.IsLocalMod)
+                    {
+                        if ((mod.Flags & ModFlags.Git) != 0)
+                        {
+                            queue.Enqueue(mod);
+                        }
+                    }
                 }
-
+                totalTasks = queue.Count;
                 Task<FetchResult>[] tasks = new Task<FetchResult>[MaxConcurrentTasks];
 
                 for (int i = 0; i < MaxConcurrentTasks; ++i)
                 {
                     tasks[i] = Task.Run(CheckForUpdatesTaskVoid, token);
+                }
+
+                Task? updateTicker = null;
+                if (progress != null)
+                {
+                    updateTicker = Task.Run(async () =>
+                   {
+                       int p;
+                       do
+                       {
+                           p = Volatile.Read(ref processed);
+                           progress.Report(p / (float)totalTasks);
+                           await Task.Delay(100);
+                       } while (p != totalTasks && !token.IsCancellationRequested);
+                   }, token);
                 }
 
                 int failedToFetch = 0;
@@ -52,6 +76,11 @@
                     var result = await tasks[i];
                     availableUpdates += result.UpdatesFound;
                     failedToFetch += result.FailedToFetch;
+                }
+
+                if (updateTicker != null)
+                {
+                    await updateTicker;
                 }
 
                 if (failedToFetch != 0)
@@ -107,6 +136,7 @@
                 {
                     ++failed;
                 }
+                Interlocked.Increment(ref processed);
             }
 
             return new FetchResult() { UpdatesFound = updatesFound, FailedToFetch = failed };
@@ -151,12 +181,12 @@
             }
         }
 
-        public async Task<bool> UpdateModsAsync(RimModList mods, CancellationToken token)
+        public async Task<bool> UpdateModsAsync(RimModList mods, IProgress<float>? progress = null, CancellationToken token = default)
         {
             if (isBusy) return false;
             if (availableUpdates == -1)
             {
-                if (await CheckForUpdatesAsync(mods, token) != CheckForUpdateResult.UpdateAvailable)
+                if (await CheckForUpdatesAsync(mods, progress, token) != CheckForUpdateResult.UpdateAvailable)
                 {
                     return false;
                 }
@@ -176,6 +206,10 @@
                     }
                 }
 
+                processed = 0;
+                totalTasks = queue.Count;
+                progress?.Report(0);
+
                 Task[] tasks = new Task[MaxConcurrentTasks];
 
                 for (int i = 0; i < MaxConcurrentTasks; ++i)
@@ -183,7 +217,25 @@
                     tasks[i] = Task.Run(UpdateModsTaskVoid, token);
                 }
 
+                Task? updateTicker = null;
+                if (progress != null)
+                {
+                    updateTicker = Task.Run(async () =>
+                    {
+                        int p;
+                        do
+                        {
+                            p = Volatile.Read(ref processed);
+                            progress.Report(p / (float)totalTasks);
+                            await Task.Delay(100);
+                        } while (p != totalTasks && !token.IsCancellationRequested);
+                    }, token);
+                }
+
                 await Task.WhenAll(tasks);
+
+                if (updateTicker != null)
+                    await updateTicker;
             }
             finally
             {
@@ -220,6 +272,8 @@
                 {
                     MessageBox.Show("Failed to update mod", $"Failed to update '{mod.Name}', please check the logs for more info.");
                 }
+
+                Interlocked.Increment(ref processed);
             }
         }
 
@@ -232,7 +286,7 @@
                 using Repository repository = new(mod.Path);
 
                 var localBranch = repository.Head;
-                var remoteBranch = repository.Branches[localBranch.UpstreamBranchCanonicalName];
+                var remoteBranch = repository.Branches["refs/remotes/origin/HEAD"];
                 if (remoteBranch == null) return false;
 
                 Stash? stash = null;
