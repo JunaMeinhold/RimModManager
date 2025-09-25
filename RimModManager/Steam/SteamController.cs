@@ -1,4 +1,6 @@
-﻿namespace RimModManager.Steam
+﻿#if BUILD_STEAM_BROWSER
+
+namespace RimModManager.Steam
 {
     using Hexa.NET.Logging;
     using Steamworks;
@@ -104,3 +106,5 @@
         }
     }
 }
+
+#endif

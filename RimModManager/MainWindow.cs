@@ -8,7 +8,9 @@
     using Hexa.NET.Utilities.Text;
     using RimModManager.RimWorld;
     using RimModManager.RimWorld.Profiles;
+#if BUILD_STEAM_BROWSER
     using RimModManager.Steam;
+#endif
     using RimModManager.TextureOptimizer;
     using System;
     using System.Collections.Generic;
@@ -73,6 +75,8 @@
             }
         }
 
+     
+
         private void Refresh(bool restore)
         {
             if (refreshTask != null && !refreshTask.IsCompleted) return;
@@ -135,6 +139,9 @@
 
         public override void Init()
         {
+            float scale = Application.MainWindow.ContentScale;
+            splitA *= scale;
+            splitB *= scale;
             Refresh(true);
         }
 
@@ -171,12 +178,14 @@
 
                 if (ImGui.BeginMenu("Edit"u8))
                 {
+#if BUILD_STEAM_BROWSER
                     ImGuiManager.PushFont("FA");
                     if (ImGui.MenuItem(builder.BuildLabel(FontAwesome.Steam, " Browse Workshop"u8)))
                     {
                         new SteamWorkshopBrowser().Show();
                     }
                     ImGuiManager.PopFont();
+#endif
                     ImGui.EndMenu();
                 }
 
@@ -381,7 +390,7 @@
             StrBuilder builder = new(buffer, 2048);
             BuildLabel(label, ref builder, inactiveFilterState.Mods.TotalCount, inactiveFilterState.Mods.Count);
 
-            ImGuiManager.PushFont("FA");
+            ImGuiManager.PushFont("FA", 18);
             DrawFilterBar(strId, builder, inactiveFilterState);
 
             var avail = ImGui.GetContentRegionAvail();
@@ -442,7 +451,7 @@
             byte* buffer = stackalloc byte[2048];
             StrBuilder builder = new(buffer, 2048);
             BuildLabel(label, ref builder, activeFilterState.Mods.TotalCount, activeFilterState.Mods.Count);
-            ImGuiManager.PushFont("FA");
+            ImGuiManager.PushFont("FA", 18);
             DrawFilterBar(strId, builder, activeFilterState);
 
             var avail = ImGui.GetContentRegionAvail();

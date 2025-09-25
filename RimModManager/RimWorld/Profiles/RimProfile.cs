@@ -180,7 +180,7 @@
 
         public unsafe void DrawLoadOrder(StrBuilder builder)
         {
-            ImGuiManager.PushFont("FA");
+            ImGuiManager.PushFont("FA", 18);
 
             ImGui.Text("Name:"u8);
             ImGui.SameLine();

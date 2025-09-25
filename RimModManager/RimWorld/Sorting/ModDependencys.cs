@@ -5,25 +5,12 @@
 
     public class ModDependencys
     {
-        private static readonly HashSet<string> knownTierOneMods = new(StringComparer.OrdinalIgnoreCase)
-        {
-                "zetrith.prepatcher",
-                "brrainz.harmony",
-                "me.samboycoding.betterloading.dev",
-                "ludeon.rimworld",
-                "ludeon.rimworld.royalty",
-                "ludeon.rimworld.ideology",
-                "ludeon.rimworld.biotech",
-                "ludeon.rimworld.anomaly",
-                "unlimitedhugs.hugslib"
-        };
-
         public static (Dictionary<RimMod, HashSet<RimMod>>, HashSet<RimMod>) GenTierOneDepsGraph(List<RimMod> allMods)
         {
             HashSet<RimMod> processedMods = [];
             HashSet<RimMod> tierOneMods = [];
 
-            foreach (var mod in allMods.Where(m => knownTierOneMods.Contains(m.PackageId)))
+            foreach (var mod in allMods.Where(m => Constants.KnownTierOneMods.Contains(m.PackageId)))
             {
                 if (tierOneMods.Add(mod))
                 {

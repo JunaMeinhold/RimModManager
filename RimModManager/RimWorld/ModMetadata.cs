@@ -5,16 +5,6 @@
 
     public class ModMetadata
     {
-        public static readonly Dictionary<string, string> WellKnownNames = new(StringComparer.OrdinalIgnoreCase)
-        {
-            { "ludeon.rimworld", "Core" },
-            { "ludeon.rimworld.royalty", "Royalty" },
-            { "ludeon.rimworld.ideology", "Ideology" },
-            { "ludeon.rimworld.biotech", "Biotech" },
-            { "ludeon.rimworld.anomaly", "Anomaly" },
-            { "ludeon.rimworld.odyssey", "Odyssey" },
-        };
-
         public string PackageId { get; set; }
 
         public string Name { get; set; }
@@ -207,7 +197,7 @@
                 Url = root.Element("url")?.Value!
             };
 
-            if (WellKnownNames.TryGetValue(metadata.PackageId, out var name))
+            if (Constants.WellKnownNames.TryGetValue(metadata.PackageId, out var name))
             {
                 metadata.Name = name;
             }

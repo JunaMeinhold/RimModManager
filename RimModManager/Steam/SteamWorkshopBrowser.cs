@@ -1,4 +1,6 @@
-﻿namespace RimModManager.Steam
+﻿#if BUILD_STEAM_BROWSER
+
+namespace RimModManager.Steam
 {
     using CefSharp;
     using Hexa.NET.ImGui;
@@ -164,3 +166,5 @@
         }
     }
 }
+
+#endif
