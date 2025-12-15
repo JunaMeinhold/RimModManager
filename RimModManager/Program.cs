@@ -1,6 +1,5 @@
 ﻿using Hexa.NET.KittyUI;
 using Hexa.NET.KittyUI.UI;
-using Hexa.NET.KittyUI.Windows;
 using RimModManager;
 using System.Numerics;
 using System.Reflection;
@@ -85,12 +84,4 @@ AppBuilder.Create()
         .AddFontFromEmbeddedResource(current, "RimModManager.assets.fonts.fa-solid-900.ttf", 18f, glyphRanges)
         .AddFontFromEmbeddedResource(current, "RimModManager.assets.fonts.fa-brands-400.ttf", 18f, glyphRanges);
     })
-    .Run(new RenderWindow());
-
-internal class RenderWindow : Window
-{
-    protected override void OnRender()
-    {
-        base.OnRender();
-    }
-}
+    .Run();

@@ -8,6 +8,7 @@
     using Hexa.NET.Utilities.Text;
     using RimModManager.RimWorld;
     using RimModManager.RimWorld.Profiles;
+    using RimModManager.RimWorld.Sorting;
 
 #if BUILD_STEAM_BROWSER
     using RimModManager.Steam;
@@ -17,6 +18,7 @@
     using System;
     using System.Collections.Generic;
     using System.Numerics;
+    using System.Threading.Tasks;
 
     public class MainWindow : ImWindow
     {
@@ -100,6 +102,7 @@
                 activeFilterState = new(loadOrder.ActiveMods);
                 selectedMod = null;
             });
+            refreshTask.ToToast("Loading mods");
         }
 
         public RimMod? SelectedMod
@@ -193,15 +196,11 @@
                 {
                     if (ImGui.MenuItem("Check for updates"u8))
                     {
-                        ToastMessage message = new("Checking for Updates", flags: ToastMessageFlags.Spinner);
-                        message.Show();
-                        updater.CheckForUpdatesAsync(mods, message, default).ContinueWith(x => message.Close());
+                        CheckForUpdates();
                     }
                     if (ImGui.MenuItem("Update mods"u8))
                     {
-                        ToastMessage message = new("Updating mods", flags: ToastMessageFlags.Spinner);
-                        message.Show();
-                        updater.UpdateModsAsync(mods, message, default).ContinueWith(x => message.Close());
+                        UpdateMods();
                     }
                     ImGui.EndMenu();
                 }
@@ -294,12 +293,12 @@
                         MissingDependenciesDialog dialog = new(loadOrder, missingMods);
                         dialog.Show((s, r) =>
                         {
-                            Sort();
+                            Sort().ToToast("Sorting mods");
                         });
                     }
                     else
                     {
-                        Sort();
+                        Sort().ToToast("Sorting mods");
                     }
                 }
                 ImGui.SameLine();
@@ -323,9 +322,35 @@
             ToastManager.Draw();
         }
 
-        private void Sort()
+        private unsafe void UpdateMods()
         {
-            loadOrder?.Sort();
+            if (mods == null) return;
+            ToastMessage message = new("Updating mods", flags: ToastMessageFlags.Spinner);
+            message.Show();
+            updater.UpdateModsAsync(mods, message, default).ContinueWith(x => message.Close());
+        }
+
+        private unsafe void CheckForUpdates()
+        {
+            if (mods == null) return;
+            ToastMessage message = new("Checking for Updates", flags: ToastMessageFlags.Spinner);
+            message.Show();
+            updater.CheckForUpdatesAsync(mods, message, default).ContinueWith(x => message.Close());
+        }
+
+        private async Task Sort()
+        {
+            await DatabaseUpdater.EnsureUpdatedAsync();
+            try
+            {
+                loadOrder?.Sort();
+            }
+            catch (GraphCycleException ex)
+            {
+                ToastMessage message = new(ex.Message, "A cycle was detected in the mod dependencies. Please check the mod dependencies and try again.");
+                message.Show();
+            }
+        
             RefreshUI();
         }
 

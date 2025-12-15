@@ -116,6 +116,12 @@
                 processor.DownscaleTextures = downscaleTextures;
             }
 
+            var dryRun = processor.DryRun;
+            if (ImGui.Checkbox("Dry Run", ref dryRun))
+            {
+                processor.DryRun = dryRun;
+            }
+
             var maxSize = processor.MaxSize;
             if (downscaleTextures && ImGui.InputInt("Max Size", ref maxSize))
             {

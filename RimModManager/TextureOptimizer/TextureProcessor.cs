@@ -52,6 +52,8 @@
 
         public bool BC7Quick { get; set; } = true;
 
+        public bool DryRun { get; set; } = false;
+
         public event Action<LogMessage>? LogMessage;
 
         public void StartWorkers(int workerCount = 4)
@@ -61,6 +63,7 @@
             server = new(port);
             _ = server.StartAsync();
             server.Connected += Connected;
+            server.HeartbeatReceived += OnHeartbeatReceived;
             server.SetHandler(MessageType.JobRequest, JobRequestHandler);
             server.SetHandler(MessageType.JobFinish, JobFinishHandler);
             server.SetHandler(MessageType.JobRequestBatch, JobRequestBatchHandler);
@@ -73,12 +76,20 @@
                 ProcessStartInfo psi = new("GPUWorker.exe", ["localhost", port.ToString()])
                 {
                     CreateNoWindow = true,
+                    UseShellExecute = false,
+                   
                 };
                 Process process = Process.Start(psi)!;
                 processes[i] = process;
             }
 
             AppDomain.CurrentDomain.ProcessExit += ProcessExit;
+        }
+
+        private Task OnHeartbeatReceived(WorkerClientRemote remote, Heartbeat heartbeat)
+        {
+            OnLogMessage(LogSeverity.Debug, "Heartbeat", $"Latency: {remote.Latency.TotalMilliseconds} ms, State: {heartbeat.StateFlags}");
+            return Task.CompletedTask;
         }
 
         private Task JobFinishBatchHandler(WorkerClientRemote remote, IPCMessage message)
@@ -102,13 +113,19 @@
 
         private async Task JobRequestBatchHandler(WorkerClientRemote remote, IPCMessage message)
         {
+            OnLogMessage(LogSeverity.Trace, "JobRequestBatchHandler", "Received");
             WorkerState state = (WorkerState)remote.Tag!;
-            if (!state.Idle) return;
+            if (!state.Idle)
+            {
+                OnLogMessage(LogSeverity.Warning, "JobRequestBatchHandler", "Worker requested batch while not idle.");
+                return;
+            }
+
             state.Idle = false;
 
             JobRequestBatch requestBatch = message.ReadDataAs<JobRequestBatch>();
 
-            int maxBatchSize = Math.Min(Math.Max(total / processes!.Length, 1), requestBatch.MaxBatchSize);
+            int maxBatchSize = requestBatch.MaxBatchSize;
 
             JobPayload[] jobs = ArrayPool<JobPayload>.Shared.Rent(maxBatchSize);
             try
@@ -119,8 +136,18 @@
                     jobs[batch++] = job;
                 }
 
-                JobPayloadBatch payloadBatch = new(batch, jobs);
-                await remote.SendMessageAsync(payloadBatch);
+                if (batch == 0)
+                {
+                    OnLogMessage(LogSeverity.Trace, "JobRequestBatchHandler", "No jobs available, sending OutOfWork");
+                    state.Idle = true;
+                    await remote.SendMessageRawAsync(new IPCMessage(MessageType.OutOfWork, 0));
+                }
+                else
+                {
+                    OnLogMessage(LogSeverity.Trace, "JobRequestBatchHandler", $"Sending batch of {batch} jobs");
+                    JobPayloadBatch payloadBatch = new(batch, jobs);
+                    await remote.SendMessageAsync(payloadBatch);
+                }
             }
             finally
             {
@@ -220,6 +247,7 @@
                 if (UpscaleTextures) flags |= WorkloadFlags.Upscale;
                 if (DownscaleTextures) flags |= WorkloadFlags.Downscale;
                 if (BC7Quick) flags |= WorkloadFlags.Bc7Quick;
+                if (DryRun) flags |= WorkloadFlags.DryRun;
 
                 Format format = Format.Bc7Unorm;
 
@@ -261,6 +289,11 @@
         private Task JobFinishHandler(WorkerClientRemote remote, IPCMessage message)
         {
             WorkerState state = (WorkerState)remote.Tag!;
+            if (state.Idle)
+            {
+                OnLogMessage(LogSeverity.Warning, "JobFinishHandler", "Worker reported job finish while idle.");
+                return Task.CompletedTask;
+            }
             state.Idle = true;
             var finish = message.ReadDataAs<JobFinish>();
             var value = Interlocked.Increment(ref processed);
@@ -274,8 +307,13 @@
 
         private async Task JobRequestHandler(WorkerClientRemote remote, IPCMessage message)
         {
+            OnLogMessage(LogSeverity.Trace, "JobRequestHandler", "Received JobRequest");
             WorkerState state = (WorkerState)remote.Tag!;
-            if (!state.Idle) return;
+            if (!state.Idle)
+            {
+                OnLogMessage(LogSeverity.Warning, "JobRequestHandler", "Worker requested job while not idle.");
+                return;
+            }
             state.Idle = false;
 
             if (queue.TryDequeue(out var item))
@@ -284,13 +322,16 @@
             }
             else
             {
-                await remote.SendMessageRawAsync(new IPCMessage(MessageType.OutOfWork, 0));
+                OnLogMessage(LogSeverity.Trace, "JobRequestHandler", "No jobs available, sending OutOfWork");
+                await remote.SendMessageRawAsync(new IPCMessage(MessageType.OutOfWork, 0)); 
+                state.Idle = true;
             }
         }
 
         public void OnLogMessage(LogSeverity severity, string source, string message)
         {
-            LogMessage?.Invoke(new LogMessage(null!, severity, source, message));
+            LogMessage msg = new(null!, severity, source, message);
+            LogMessage?.Invoke(msg);
         }
     }
 }

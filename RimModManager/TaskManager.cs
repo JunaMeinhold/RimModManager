@@ -175,11 +175,14 @@
             draw.AddRectFilled(pos, progressMax, 0xffc86500, 8);
             pos += style.FramePadding + style.ItemSpacing;
 
+            var fontSize = ImGui.GetFontSize();
+
             ImRect contentRect = new(pos, pos + size - (style.FramePadding + style.ItemSpacing) * 2);
 
             if ((flags & ToastMessageFlags.Spinner) != 0)
             {
-                var spinnerSize = Spinner(draw, pos, 11, 2, 0xffffffff);
+              
+                var spinnerSize = Spinner(draw, pos, fontSize * 0.5f, 2, 0xffffffff);
                 pos.X += spinnerSize.X + style.ItemSpacing.X;
             }
 

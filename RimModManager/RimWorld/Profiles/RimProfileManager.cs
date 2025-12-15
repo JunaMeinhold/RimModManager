@@ -1,22 +1,22 @@
 ﻿namespace RimModManager.RimWorld.Profiles
 {
-    using Hexa.NET.ImGui.Widgets;
     using Hexa.NET.ImGui.Widgets.Dialogs;
     using Hexa.NET.Logging;
 
     public class RimProfileManager
     {
         private readonly List<RimProfile> profiles = [];
-        private static readonly string profilesFolder = "Profiles";
+
+        private static string ProfilesFolder => Paths.ProfilesFolder;
 
         public RimProfileManager()
         {
-            if (!Directory.Exists(profilesFolder))
+            if (!Directory.Exists(ProfilesFolder))
             {
-                Directory.CreateDirectory(profilesFolder);
+                Directory.CreateDirectory(ProfilesFolder);
             }
 
-            foreach (var profileFile in Directory.EnumerateFiles(profilesFolder, "*.xml"))
+            foreach (var profileFile in Directory.EnumerateFiles(ProfilesFolder, "*.xml"))
             {
                 try
                 {
@@ -56,7 +56,7 @@
                 dialog.ProfileManager.profiles.Add(profile);
                 try
                 {
-                    profile.Save(Path.Combine(profilesFolder, dialog.ProfileName + ".xml"));
+                    profile.Save(Path.Combine(ProfilesFolder, dialog.ProfileName + ".xml"));
                 }
                 catch (Exception ex)
                 {
@@ -70,7 +70,7 @@
         {
             try
             {
-                File.Delete(Path.Combine(profilesFolder, profile.Name + ".xml"));
+                File.Delete(Path.Combine(ProfilesFolder, profile.Name + ".xml"));
                 profiles.Remove(profile);
             }
             catch (Exception ex)
@@ -88,8 +88,8 @@
                 if (s is not RenameProfileDialog dialog || r != DialogResult.Ok) return;
                 RimProfile profile = dialog.Profile;
                 dialog.ProfileManager.profiles.Add(profile);
-                string oldPath = Path.Combine(profilesFolder, profile.Name + ".xml");
-                string newPath = Path.Combine(profilesFolder, dialog.NewProfileName + ".xml");
+                string oldPath = Path.Combine(ProfilesFolder, profile.Name + ".xml");
+                string newPath = Path.Combine(ProfilesFolder, dialog.NewProfileName + ".xml");
                 try
                 {
                     File.Move(oldPath, newPath);

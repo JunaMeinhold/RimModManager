@@ -6,6 +6,7 @@
     public enum MessageType : ushort
     {
         Unknown = 0,
+        ProtocolError,
         ClientReady,
         ServerReady,
         JobReady,
@@ -116,7 +117,12 @@
         {
             get
             {
-                return 4 + JobFinishes.Sum(x => x.Length);
+                int size = 4;
+                for (int i = 0; i < BatchSize; i++)
+                {
+                    size += JobFinishes[i].Length;
+                }
+                return size;
             }
         }
 

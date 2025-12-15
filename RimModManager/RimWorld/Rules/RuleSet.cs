@@ -27,6 +27,7 @@
         public void Write(string path)
         {
             using var fs = File.Create(path);
+            JsonSerializer.Serialize(fs, this, RuleSetSourceGenerationContext.Default.RuleSet);
         }
 
         private static RuleSet? communityRules;
@@ -36,7 +37,7 @@
         {
             get
             {
-                return communityRules ??= Load("database/communityRules.json", ModReferenceSource.CommunityRules);
+                return communityRules ??= Load(DatabaseUpdater.CommunityRulesPath, ModReferenceSource.CommunityRules);
             }
         }
 
@@ -44,8 +45,18 @@
         {
             get
             {
-                return customRules ??= Load("database/customRules.json", ModReferenceSource.CustomRules);
+                return customRules ??= Load(DatabaseUpdater.CustomRulesPath, ModReferenceSource.CustomRules);
             }
+        }
+
+        public static void ResetCommunityRules()
+        {
+            communityRules = null;
+        }
+
+        public static void ResetCustomRules()
+        {
+            customRules = null;
         }
 
         public IEnumerable<ModReference> EnumerateLoadBefore(RimMod mod, IReadOnlyDictionary<string, RimMod> packageIdToMod)

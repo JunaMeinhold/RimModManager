@@ -54,15 +54,16 @@
                             toActivate.Remove(mod);
                         }
                     }
-                }
 
-                bool hovered = ImGui.IsItemHovered();
 
-                mod.DrawContextMenu(loadOrder);
+                    bool hovered = ImGui.IsItemHovered();
 
-                if (hovered)
-                {
-                    mod.DrawTooltip(builder);
+                    mod.DrawContextMenu(loadOrder);
+
+                    if (hovered)
+                    {
+                        mod.DrawTooltip(builder);
+                    }
                 }
             }
 

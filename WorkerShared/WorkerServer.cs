@@ -29,6 +29,8 @@
 
         public event Func<WorkerClientRemote, Task>? Ready;
 
+        public event Func<WorkerClientRemote, Heartbeat, Task>? HeartbeatReceived;
+
         public IReadOnlyList<WorkerClientRemote> Clients => clients;
 
         public void SetHandler(MessageType type, Func<WorkerClientRemote, IPCMessage, Task> handler)
@@ -64,6 +66,7 @@
             WorkerClientRemote remote = new(client);
             remote.Disconnected += OnClientDisconnected;
             remote.MessageReceived += OnMessageReceived;
+            remote.HeartbeatReceived += OnHeartbeatReceived;
             remote.Ready += OnClientReady;
 
             await remote.ReadyClient();
@@ -72,6 +75,14 @@
             clients.Add(remote);
             semaphore.Release();
             Connected?.Invoke(remote);
+        }
+
+        private async Task OnHeartbeatReceived(WorkerClientRemote remote, Heartbeat heartbeat)
+        {
+            if (HeartbeatReceived != null)
+            {
+                await HeartbeatReceived.Invoke(remote, heartbeat);
+            }
         }
 
         private async Task OnClientReady(WorkerClientRemote remote)
@@ -84,6 +95,7 @@
 
         private void OnClientDisconnected(WorkerClientRemote remote, bool terminated)
         {
+            remote.HeartbeatReceived -= OnHeartbeatReceived;
             remote.MessageReceived -= OnMessageReceived;
             remote.Disconnected -= OnClientDisconnected;
             remote.Ready -= OnClientReady;
@@ -142,6 +154,7 @@
             semaphore.Wait();
             foreach (var remote in clients)
             {
+                remote.HeartbeatReceived -= OnHeartbeatReceived;
                 remote.MessageReceived -= OnMessageReceived;
                 remote.Disconnected -= OnClientDisconnected;
                 remote.Ready -= OnClientReady;

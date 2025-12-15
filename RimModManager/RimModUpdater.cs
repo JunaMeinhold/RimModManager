@@ -266,7 +266,7 @@
                 if (updatedSuccessfully)
                 {
                     mod.Flags &= ~ModFlags.UpdateAvailable;
-                    --availableUpdates;
+                    Interlocked.Decrement(ref availableUpdates);
                 }
                 else
                 {

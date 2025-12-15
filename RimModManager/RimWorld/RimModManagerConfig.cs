@@ -8,7 +8,7 @@
 
     public class RimModManagerConfig
     {
-        public static readonly string DefaultConfigPath = "config.json";
+        public static readonly string DefaultConfigPath = Path.Combine(Paths.AppDataFolder, "config.json");
         private string? localModsFolder;
 
         public string? GameFolder { get; set; }

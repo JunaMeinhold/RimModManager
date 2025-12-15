@@ -17,7 +17,7 @@
     {
         private ComPtr<ID3D11Device5> device;
 
-        public D3D11ImagePipeline(WorkerIPCClient client) : base(client, false, 1)
+        public D3D11ImagePipeline(WorkerIPCClient client) : base(client, true, 32)
         {
             D3D11Adapter.Init(null!, false);
             device = D3D11GraphicsDevice.Device;
@@ -25,6 +25,10 @@
 
         protected override JobFinish ProcessImage(JobPayload workload, CancellationToken cancellationToken)
         {
+            if ((workload.Flags & WorkloadFlags.DryRun) != 0)
+            {
+                return new JobFinish(workload.Id, resultCode: 0, $"[{workload.Source}] DryRun - No processing done.");
+            }
             ImageSource? texture = null;
             try
             {

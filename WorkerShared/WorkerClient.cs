@@ -28,6 +28,8 @@ namespace WorkerShared
 
         public TimeSpan Latency => latency;
 
+        public WorkerState StateFlags { get; set; }
+
         public async Task StartProcessingAsync()
         {
             client = new(masterAddress, masterPort);
@@ -57,8 +59,8 @@ namespace WorkerShared
             var received = message.ReadDataAs<Heartbeat>();
             long now = DateTime.UtcNow.Ticks;
             latency = TimeSpan.FromTicks(now - received.Timestamp);
-            Heartbeat heartbeat = new(now);
-            await client.SendMessageAsync<Heartbeat>(heartbeat);
+            Heartbeat heartbeat = new(now, StateFlags);
+            await client.SendMessageAsync(heartbeat);
             Console.WriteLine($"Heartbeat: Latency: {latency.Milliseconds}ms, {received.Timestamp}");
         }
 
@@ -109,6 +111,17 @@ namespace WorkerShared
                 await stream.ReadExactlyAsync(message.Data, cancellationToken);
             }
             return message;
+        }
+
+        public async ValueTask SendErrorAsync(ProtocolErrorType errorType, string? errorMessage = null)
+        {
+            ProtocolError error = new(errorType, errorMessage);
+            await SendMessageAsync(error);
+        }
+
+        public async ValueTask SendLightMessageAsync(MessageType type, CancellationToken cancellationToken = default)
+        {
+            await SendMessageRawAsync(new(type, 0), cancellationToken);
         }
 
         public async ValueTask SendMessageAsync<T>(T record, CancellationToken cancellationToken = default) where T : IRecord

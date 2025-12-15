@@ -47,6 +47,8 @@
 
         public bool ClientReady => clientReady;
 
+        public event Func<WorkerClientRemote, Heartbeat, Task>? HeartbeatReceived;
+
         public void SetHandler(MessageType type, Func<WorkerClientRemote, IPCMessage, Task> handler)
         {
             handlers[type] = handler;
@@ -64,6 +66,7 @@
             long now = DateTime.UtcNow.Ticks;
             latency = TimeSpan.FromTicks(now - heartbeat.Timestamp);
             lastReceivedHeartbeat = now;
+            _ = HeartbeatReceived?.Invoke(this, heartbeat);
             return Task.CompletedTask;
         }
 
@@ -83,7 +86,7 @@
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                Heartbeat heartbeat = new(DateTime.UtcNow.Ticks);
+                Heartbeat heartbeat = new(DateTime.UtcNow.Ticks, WorkerState.None);
                 await SendMessageAsync(heartbeat, cancellationToken);
                 await Task.Delay(timeout, cancellationToken);
 
@@ -154,6 +157,16 @@
             }
 
             return message;
+        }
+        public async ValueTask SendErrorAsync(ProtocolErrorType errorType, string? errorMessage = null)
+        {
+            ProtocolError error = new(errorType, errorMessage);
+            await SendMessageAsync(error);
+        }
+
+        public async ValueTask SendLightMessageAsync(MessageType type, CancellationToken cancellationToken = default)
+        {
+            await SendMessageRawAsync(new(type, 0), cancellationToken);
         }
 
         public async Task SendMessageAsync<T>(T record, CancellationToken cancellationToken = default) where T : IRecord

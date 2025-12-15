@@ -8,5 +8,6 @@
         Downscale = 4,
         FlipVertical = 8,
         Bc7Quick = 16,
+        DryRun = 32,
     }
 }

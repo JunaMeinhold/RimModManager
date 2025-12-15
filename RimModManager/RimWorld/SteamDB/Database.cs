@@ -25,7 +25,12 @@
 
         public static SteamDatabase Instance
         {
-            get => instance ??= Load("database/db.json");
+            get => instance ??= Load(DatabaseUpdater.SteamRulesPath);
+        }
+
+        public static void ResetInstance()
+        {
+            instance = null;
         }
 
         public static SteamDatabase Load(string path)

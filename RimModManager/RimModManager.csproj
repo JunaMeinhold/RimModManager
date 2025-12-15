@@ -45,24 +45,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <None Update="database\communityRules.json">
-	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	  </None>
-	  <None Update="database\db.json">
-	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	  </None>
-		<!-- BUILD_STEAM_BROWSER 
-	  <None Update="steam_api64.dll">
-	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-	  </None>
-	  <None Update="steam_appid.txt">
-	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-	  </None>	
-		-->
-
-	</ItemGroup>
-
-	<ItemGroup>
 	  <Folder Include="Plugins\" />
 	  <Folder Include="RimWorld\Modpacks\" />
 	</ItemGroup>
