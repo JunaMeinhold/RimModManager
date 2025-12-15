@@ -166,7 +166,7 @@
 
         public void CheckForProblems()
         {
-            ProblemChecker.CheckForProblems(Messages, this, modList, RimVersion, true);
+            ProblemChecker.CheckForProblems(Messages, this, modList, RimVersion, MergedMessageSuppressionSet.Global, true);
         }
 
         public void Clear()

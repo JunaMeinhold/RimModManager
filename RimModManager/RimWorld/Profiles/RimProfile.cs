@@ -91,7 +91,7 @@
 
         public void CheckForProblems(RimModList mods)
         {
-            ProblemChecker.CheckForProblems(Messages, this, mods, RimVersion, true);
+            ProblemChecker.CheckForProblems(Messages, this, mods, RimVersion, MergedMessageSuppressionSet.Global, true);
         }
 
         private void AddMessage(RimMod mod, RimSeverity severity, string message)

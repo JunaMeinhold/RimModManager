@@ -7,6 +7,7 @@
     using Hexa.NET.KittyUI.ImGuiBackend;
     using Hexa.NET.Utilities.Text;
     using RimModManager.RimWorld;
+    using RimModManager.RimWorld.NoVersionWarning;
     using RimModManager.RimWorld.Profiles;
     using RimModManager.RimWorld.Sorting;
 
@@ -82,21 +83,36 @@
         private void Refresh(bool restore)
         {
             if (refreshTask != null && !refreshTask.IsCompleted) return;
-            refreshTask = Task.Run(() =>
+            refreshTask = Task.Run(async () =>
             {
                 if (!config.CheckPaths()) return;
                 RimModLoader.RefreshMods(config);
                 mods = RimModLoader.Current;
+
                 if (restore)
                 {
                     loadOrder = ModsConfig.Load(config, mods);
-                    loadOrder.CheckForProblems();
                 }
                 else
                 {
                     loadOrder!.PopulateList(mods);
-                    loadOrder.CheckForProblems();
                 }
+
+                MessageSuppressionSet verSet = new();
+                var noVerWarnSet = await NoVerWarnSetLoader.GetSetForVersion(loadOrder.RimVersion);
+                var globalSet = MergedMessageSuppressionSet.Global;
+                globalSet.Clear();
+                globalSet.AddSet(verSet);
+
+                if (noVerWarnSet != null)
+                {
+                    foreach (var modId in noVerWarnSet.ModIds)
+                    {
+                        verSet.Suppress(MessageId.ModGameVersion, modId);
+                    }
+                }
+
+                loadOrder.CheckForProblems();
 
                 inactiveFilterState = new(loadOrder.InactiveMods);
                 activeFilterState = new(loadOrder.ActiveMods);
