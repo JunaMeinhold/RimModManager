@@ -1,13 +1,17 @@
 ﻿using Hexa.NET.KittyUI;
+using Hexa.NET.KittyUI.Debugging;
 using Hexa.NET.KittyUI.UI;
+using Hexa.NET.Logging;
 using RimModManager;
 using System.Numerics;
 using System.Reflection;
+
 
 AppBuilder.Create()
     .AddWindow<MainWindow>()
     .AddTitleBar<TitleBar>()
     .EnableDebugTools(true)
+    .SetLogFolder(Paths.LogFolder)
     .SetTitle("Rim Mod Manager")
     .AddFont(builder =>
     {

@@ -1,5 +1,6 @@
 ﻿namespace RimModManager
 {
+    using RimModManager.RimWorld;
     using RimModManager.RimWorld.Rules;
     using RimModManager.RimWorld.SteamDB;
     using System.Threading.Tasks;
@@ -19,6 +20,16 @@
         public static async Task EnsureUpdatedAsync()
         {
             if (Interlocked.Exchange(ref hasUpdatedSinceStart, true)) return;
+
+            var config = RimModManagerConfig.Default;
+            var now = DateTime.UtcNow;
+            if ((now - config.DatabaseLastUpdated).TotalDays < 1)
+            {
+                return;
+            }
+            config.DatabaseLastUpdated = now;
+            config.Save();
+
             await UpdateAsync();
         }
 

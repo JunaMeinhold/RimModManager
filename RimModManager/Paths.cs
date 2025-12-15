@@ -10,6 +10,8 @@
 
         public static string DatabaseFolder { get; }
 
+        public static string LogFolder { get; }
+
         private static void EnsureCreatedDirectory(string path)
         {
             if (!Directory.Exists(path))
@@ -27,6 +29,8 @@
             EnsureCreatedDirectory(ProfilesFolder);
             DatabaseFolder = Path.Combine(AppDataFolder, "database");
             EnsureCreatedDirectory(DatabaseFolder);
+            LogFolder = Path.Combine(AppDataFolder, "logs");
+            EnsureCreatedDirectory(LogFolder);
         }
     }
 }

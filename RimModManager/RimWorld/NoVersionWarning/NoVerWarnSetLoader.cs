@@ -16,6 +16,16 @@
         public static async Task EnsureUpdated()
         {
             if (Interlocked.Exchange(ref updatedSinceStart, true)) return;
+
+            var config = RimModManagerConfig.Default;
+            var now = DateTime.UtcNow;
+            if ((now - config.NoVersionWarnLastUpdated).TotalDays < 1)
+            {
+                return;
+            }
+            config.NoVersionWarnLastUpdated = now;
+            config.Save();
+
             await UpdateAsync();
         }
 

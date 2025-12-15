@@ -20,6 +20,10 @@
         [JsonIgnore]
         public string? LocalModsFolder => localModsFolder ??= GameFolder == null ? null : Path.Combine(GameFolder!, "Mods");
 
+        public DateTime DatabaseLastUpdated { get; set; } = DateTime.MinValue;
+
+        public DateTime NoVersionWarnLastUpdated { get; set; } = DateTime.MinValue;
+
         public bool CheckPaths()
         {
             if (!Directory.Exists(GameFolder))
@@ -84,6 +88,13 @@
         {
             using var fs = File.Create(path);
             JsonSerializer.Serialize(fs, this, typeof(RimModManagerConfig), RimModManagerConfigGenerationContext.Default);
+        }
+
+        public static RimModManagerConfig Default = null!;
+
+        public RimModManagerConfig()
+        {
+            Default ??= this;
         }
 
         public void LaunchGame()
