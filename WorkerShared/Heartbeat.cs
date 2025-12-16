@@ -5,12 +5,12 @@ namespace WorkerShared
     public struct Heartbeat : IRecord
     {
         public long Timestamp;
-        public WorkerState StateFlags;
+        public WorkerState State;
 
-        public Heartbeat(long timestamp, WorkerState flags)
+        public Heartbeat(long timestamp, WorkerState state)
         {
             Timestamp = timestamp;
-            StateFlags = flags;
+            State = state;
         }
 
         public readonly MessageType Type => MessageType.Heartbeat;
@@ -20,14 +20,14 @@ namespace WorkerShared
         public int Read(ReadOnlySpan<byte> buffer)
         {
             Timestamp = BinaryPrimitives.ReadInt64LittleEndian(buffer);
-            StateFlags = (WorkerState)BinaryPrimitives.ReadUInt32LittleEndian(buffer[8..]);
+            State = (WorkerState)BinaryPrimitives.ReadUInt32LittleEndian(buffer[8..]);
             return 12;
         }
 
         public readonly int Write(Span<byte> buffer)
         {
             BinaryPrimitives.WriteInt64LittleEndian(buffer, Timestamp);
-            BinaryPrimitives.WriteUInt32LittleEndian(buffer[8..], (uint)StateFlags);
+            BinaryPrimitives.WriteUInt32LittleEndian(buffer[8..], (uint)State);
             return 12;
         }
     }

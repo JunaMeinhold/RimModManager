@@ -5,11 +5,11 @@ namespace WorkerShared
 {
     public struct JobFinish : IRecord
     {
-        public int Id;
+        public long Id;
         public int ResultCode;
         public string? Message;
 
-        public JobFinish(int id, int resultCode, string? message = null)
+        public JobFinish(long id, int resultCode, string? message = null)
         {
             Id = id;
             ResultCode = resultCode;
@@ -22,13 +22,13 @@ namespace WorkerShared
         {
             get
             {
-                return 4 + 4 + 4 + Encoding.UTF8.GetByteCount(Message ?? string.Empty);
+                return 8 + 4 + 4 + Encoding.UTF8.GetByteCount(Message ?? string.Empty);
             }
         }
 
         public int Read(ReadOnlySpan<byte> buffer)
         {
-            Id = BinaryPrimitives.ReadInt32LittleEndian(buffer);
+            Id = BinaryPrimitives.ReadInt64LittleEndian(buffer);
             ResultCode = BinaryPrimitives.ReadInt32LittleEndian(buffer[4..]);
             int len = BinaryPrimitives.ReadInt32LittleEndian(buffer[8..]);
             Message = Encoding.UTF8.GetString(buffer.Slice(12, len));
@@ -37,7 +37,7 @@ namespace WorkerShared
 
         public readonly int Write(Span<byte> buffer)
         {
-            BinaryPrimitives.WriteInt32LittleEndian(buffer, Id);
+            BinaryPrimitives.WriteInt64LittleEndian(buffer, Id);
             BinaryPrimitives.WriteInt32LittleEndian(buffer[4..], ResultCode);
             int len = Encoding.UTF8.GetByteCount(Message ?? string.Empty);
             BinaryPrimitives.WriteInt32LittleEndian(buffer[8..], len);

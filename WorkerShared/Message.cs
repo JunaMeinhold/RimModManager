@@ -35,4 +35,26 @@ namespace WorkerShared
             return t;
         }
     }
+
+    public struct LightIPCMessage : IRecord
+    {
+        public LightIPCMessage(MessageType type)
+        {
+            Type = type;
+        }
+
+        public MessageType Type { get; }
+
+        public readonly int Length => 0;
+
+        public readonly int Read(ReadOnlySpan<byte> buffer)
+        {
+            return 0;
+        }
+
+        public readonly int Write(Span<byte> buffer)
+        {
+            return 0;
+        }
+    }
 }

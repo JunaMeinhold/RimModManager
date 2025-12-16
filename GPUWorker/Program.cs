@@ -17,5 +17,8 @@ else
     return;
 }
 
-await client.StartProcessingAsync();
+await client.HandshakeAsync();
+await imagePipeline.StartAsync();
+await client.WaitForExit();
+
 imagePipeline.Dispose();

@@ -31,9 +31,9 @@
             }
         }
 
-        public static async ValueTask<LockGuard> LockAsync(this SemaphoreSlim semaphore)
+        public static async ValueTask<LockGuard> LockAsync(this SemaphoreSlim semaphore, CancellationToken cancellationToken = default)
         {
-            await semaphore.WaitAsync();
+            await semaphore.WaitAsync(cancellationToken);
             return new LockGuard(semaphore);
         }
 

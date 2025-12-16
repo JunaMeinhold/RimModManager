@@ -13,8 +13,10 @@
         JobRequest,
         JobPayload,
         JobFinish,
+        JobCancel,
 
         OutOfWork,
+        WorkerStateChanged,
 
         JobRequestBatch,
         JobPayloadBatch,

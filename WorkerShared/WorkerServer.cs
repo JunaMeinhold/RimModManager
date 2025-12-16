@@ -1,5 +1,6 @@
 ﻿namespace WorkerShared
 {
+    using RimModManager;
     using System;
     using System.Buffers;
     using System.Net;
@@ -29,7 +30,11 @@
 
         public event Func<WorkerClientRemote, Task>? Ready;
 
+        public event Func<WorkerClientRemote, WorkerState, Task>? StateChanged;
+
         public event Func<WorkerClientRemote, Heartbeat, Task>? HeartbeatReceived;
+
+        public event Func<WorkerClientRemote, Task>? HeartbeatMissed;
 
         public IReadOnlyList<WorkerClientRemote> Clients => clients;
 
@@ -64,18 +69,17 @@
         private async Task OnClientConnect(TcpClient client)
         {
             WorkerClientRemote remote = new(client);
-            remote.Disconnected += OnClientDisconnected;
-            remote.MessageReceived += OnMessageReceived;
-            remote.HeartbeatReceived += OnHeartbeatReceived;
-            remote.Ready += OnClientReady;
+            SubscribeEvents(remote);
 
-            await remote.ReadyClient();
+            await remote.HandshakeAsync();
 
             await semaphore.WaitAsync();
             clients.Add(remote);
             semaphore.Release();
             Connected?.Invoke(remote);
         }
+
+
 
         private async Task OnHeartbeatReceived(WorkerClientRemote remote, Heartbeat heartbeat)
         {
@@ -95,14 +99,46 @@
 
         private void OnClientDisconnected(WorkerClientRemote remote, bool terminated)
         {
-            remote.HeartbeatReceived -= OnHeartbeatReceived;
-            remote.MessageReceived -= OnMessageReceived;
-            remote.Disconnected -= OnClientDisconnected;
-            remote.Ready -= OnClientReady;
+            UnsubscribeEvents(remote);
             semaphore.Wait();
             clients.Remove(remote);
             semaphore.Release();
             Disconnected?.Invoke(remote, terminated);
+        }
+        private void SubscribeEvents(WorkerClientRemote remote)
+        {
+            remote.Disconnected += OnClientDisconnected;
+            remote.MessageReceived += OnMessageReceived;
+            remote.StateChanged += OnStateChanged;
+            remote.HeartbeatReceived += OnHeartbeatReceived;
+            remote.HeartbeatMissed += OnHeartbeatMissed;
+            remote.Ready += OnClientReady;
+        }
+
+        private void UnsubscribeEvents(WorkerClientRemote remote)
+        {
+            remote.HeartbeatReceived -= OnHeartbeatReceived;
+            remote.HeartbeatMissed -= OnHeartbeatMissed;
+            remote.StateChanged -= OnStateChanged;
+            remote.MessageReceived -= OnMessageReceived;
+            remote.Disconnected -= OnClientDisconnected;
+            remote.Ready -= OnClientReady;
+        }
+
+        private async Task OnStateChanged(WorkerClientRemote remote, WorkerState state)
+        {
+            if (StateChanged != null)
+            {
+                await StateChanged.Invoke(remote, state);
+            }
+        }
+
+        private async Task OnHeartbeatMissed(WorkerClientRemote remote)
+        {
+            if (HeartbeatMissed != null)
+            {
+                await HeartbeatMissed.Invoke(remote);
+            }
         }
 
         private async Task OnMessageReceived(WorkerClientRemote remote, IPCMessage message)
@@ -113,38 +149,32 @@
             }
         }
 
-        public async Task Broadcast<T>(T record, CancellationToken cancellationToken = default) where T : IRecord
+        public Task BroadcastLightMessageAsync(MessageType message, CancellationToken cancellationToken = default)
         {
-            var length = record.Length;
-            var buffer = ArrayPool<byte>.Shared.Rent(length);
-            try
-            {
-                record.Write(buffer);
-                IPCMessage message = new(record.Type, (uint)length)
-                {
-                    Data = buffer.AsMemory()[..length]
-                };
-                await BroadcastRaw(message, cancellationToken);
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
+            return BroadcastMessageAsync(new LightIPCMessage(message), cancellationToken);
         }
 
-        public async Task BroadcastRaw(IPCMessage message, CancellationToken cancellationToken = default)
+        public async Task BroadcastMessageAsync<T>(T record, CancellationToken cancellationToken = default) where T : IRecord
         {
-            await semaphore.WaitAsync(cancellationToken);
+            using var guard = await semaphore.LockAsync(cancellationToken);
+            var length = record.Length;
+            var totalLength = IPCMessage.HeaderSize + length;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalLength);
             try
             {
+                var span = buffer.AsSpan(0, totalLength);
+                IPCMessage message = new(record.Type, (uint)length);
+                message.Write(span);
+                record.Write(span[IPCMessage.HeaderSize..]);
+
                 foreach (var remote in clients)
                 {
-                    await remote.SendMessageRawAsync(message, cancellationToken);
+                    await remote.SendRawAsync(buffer.AsMemory(0, totalLength), cancellationToken);
                 }
             }
             finally
             {
-                semaphore.Release();
+                ArrayPool<byte>.Shared.Return(buffer);
             }
         }
 
@@ -154,16 +184,54 @@
             semaphore.Wait();
             foreach (var remote in clients)
             {
-                remote.HeartbeatReceived -= OnHeartbeatReceived;
-                remote.MessageReceived -= OnMessageReceived;
-                remote.Disconnected -= OnClientDisconnected;
-                remote.Ready -= OnClientReady;
+                UnsubscribeEvents(remote);
                 remote.Shutdown();
             }
             semaphore.Dispose();
 
             isRunning = false;
             listener.Stop();
+        }
+
+        public struct ClientEnumerator : IEnumerator<WorkerClientRemote>
+        {
+            private List<WorkerClientRemote> list;
+            private SemaphoreSlim semaphore;
+            private int index;
+
+            public ClientEnumerator(List<WorkerClientRemote> list, SemaphoreSlim semaphore)
+            {
+                this.list = list;
+                this.semaphore = semaphore;
+                this.index = -1;
+                semaphore.Wait();
+            }
+
+            public WorkerClientRemote Current => list[index];
+
+            object? System.Collections.IEnumerator.Current => Current;
+
+            public void Dispose()
+            {
+                semaphore.Release();
+            }
+
+            public bool MoveNext()
+            {
+                index++;
+                return index < list.Count;
+            }
+            public void Reset()
+            {
+                index = -1;
+
+            }
+
+        }
+
+        public ClientEnumerator GetEnumerator()
+        {
+            return new ClientEnumerator(clients, semaphore);
         }
     }
 }

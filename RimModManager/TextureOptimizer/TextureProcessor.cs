@@ -1,5 +1,6 @@
 ﻿namespace RimModManager.TextureOptimizer
 {
+    using Hexa.NET.D3D11;
     using Hexa.NET.DXGI;
     using Hexa.NET.Logging;
     using Hexa.NET.Utilities.IO;
@@ -16,25 +17,35 @@
         private readonly ConcurrentQueue<JobPayload> queue = new();
         private readonly int port = 22984;
         private WorkerServer? server;
-        private int total;
-        private int processed;
+        private long total;
+        private long processed;
         private bool isRunning;
         private bool isProcessing;
         private Task? scanTask;
         private Process[]? processes;
+        private int idleWorkerCount = 0;
 
-        public class WorkerState
+        public class WorkerStateObj
         {
+            private long state;
+
             public bool Idle { get; set; } = true;
+
+            public WorkerState State => (WorkerState)Volatile.Read(ref state);
+
+            public WorkerState Exchange(WorkerState newState)
+            {
+                return (WorkerState)Interlocked.Exchange(ref state, (long)newState);
+            }
         }
 
         public TextureProcessor()
         {
         }
 
-        public int Total => total;
+        public long Total => total;
 
-        public int Processed => processed;
+        public long Processed => processed;
 
         public bool IsProcessing => isProcessing;
 
@@ -56,14 +67,16 @@
 
         public event Action<LogMessage>? LogMessage;
 
-        public void StartWorkers(int workerCount = 4)
+        public WorkerServer? Server => server;
+
+        public void StartWorkers(int workerCount = 8)
         {
             if (isRunning) return;
             isRunning = true;
             server = new(port);
             _ = server.StartAsync();
-            server.Connected += Connected;
-            server.HeartbeatReceived += OnHeartbeatReceived;
+            server.Ready += ClientReady;
+            server.StateChanged += OnStateChanged;
             server.SetHandler(MessageType.JobRequest, JobRequestHandler);
             server.SetHandler(MessageType.JobFinish, JobFinishHandler);
             server.SetHandler(MessageType.JobRequestBatch, JobRequestBatchHandler);
@@ -77,7 +90,6 @@
                 {
                     CreateNoWindow = true,
                     UseShellExecute = false,
-                   
                 };
                 Process process = Process.Start(psi)!;
                 processes[i] = process;
@@ -86,15 +98,39 @@
             AppDomain.CurrentDomain.ProcessExit += ProcessExit;
         }
 
-        private Task OnHeartbeatReceived(WorkerClientRemote remote, Heartbeat heartbeat)
+        private async Task OnStateChanged(WorkerClientRemote remote, WorkerState state)
         {
-            OnLogMessage(LogSeverity.Debug, "Heartbeat", $"Latency: {remote.Latency.TotalMilliseconds} ms, State: {heartbeat.StateFlags}");
+            if (!Enum.IsDefined(state))
+            {
+                OnLogMessage(LogSeverity.Error, "WorkerStateChanged", $"Worker reported invalid state: {state}");
+                return;
+            }
+
+            WorkerStateObj stateObj = (WorkerStateObj)remote.Tag!;
+            var oldState = stateObj.Exchange(state);
+            if (state == WorkerState.Idle)
+            {
+                var count = Interlocked.Increment(ref idleWorkerCount);
+                if (count == processes!.Length && !queue.IsEmpty)
+                {
+                    SignalWorkers();
+                }
+            }
+            else if (oldState == WorkerState.Idle)
+            {
+                Interlocked.Decrement(ref idleWorkerCount);
+            }
+        }
+
+        private Task ClientReady(WorkerClientRemote remote)
+        {
+            remote.Tag = new WorkerStateObj();
             return Task.CompletedTask;
         }
 
         private Task JobFinishBatchHandler(WorkerClientRemote remote, IPCMessage message)
         {
-            WorkerState state = (WorkerState)remote.Tag!;
+            WorkerStateObj state = (WorkerStateObj)remote.Tag!;
             state.Idle = true;
             var batch = message.ReadDataAs<JobFinishBatch>();
             foreach (var job in batch.JobFinishes)
@@ -113,8 +149,7 @@
 
         private async Task JobRequestBatchHandler(WorkerClientRemote remote, IPCMessage message)
         {
-            OnLogMessage(LogSeverity.Trace, "JobRequestBatchHandler", "Received");
-            WorkerState state = (WorkerState)remote.Tag!;
+            WorkerStateObj state = (WorkerStateObj)remote.Tag!;
             if (!state.Idle)
             {
                 OnLogMessage(LogSeverity.Warning, "JobRequestBatchHandler", "Worker requested batch while not idle.");
@@ -138,13 +173,11 @@
 
                 if (batch == 0)
                 {
-                    OnLogMessage(LogSeverity.Trace, "JobRequestBatchHandler", "No jobs available, sending OutOfWork");
                     state.Idle = true;
-                    await remote.SendMessageRawAsync(new IPCMessage(MessageType.OutOfWork, 0));
+                    await remote.SendLightMessageAsync(MessageType.OutOfWork);
                 }
                 else
                 {
-                    OnLogMessage(LogSeverity.Trace, "JobRequestBatchHandler", $"Sending batch of {batch} jobs");
                     JobPayloadBatch payloadBatch = new(batch, jobs);
                     await remote.SendMessageAsync(payloadBatch);
                 }
@@ -165,11 +198,6 @@
             {
                 process.Kill();
             }
-        }
-
-        private void Connected(WorkerClientRemote remote)
-        {
-            remote.Tag = new WorkerState();
         }
 
         private void ProcessExit(object? sender, EventArgs e)
@@ -283,12 +311,12 @@
 
         private void SignalWorkers()
         {
-            _ = server!.BroadcastRaw(new(MessageType.JobReady, 0));
+            _ = server!.BroadcastLightMessageAsync(MessageType.JobReady);
         }
 
         private Task JobFinishHandler(WorkerClientRemote remote, IPCMessage message)
         {
-            WorkerState state = (WorkerState)remote.Tag!;
+            WorkerStateObj state = (WorkerStateObj)remote.Tag!;
             if (state.Idle)
             {
                 OnLogMessage(LogSeverity.Warning, "JobFinishHandler", "Worker reported job finish while idle.");
@@ -307,8 +335,7 @@
 
         private async Task JobRequestHandler(WorkerClientRemote remote, IPCMessage message)
         {
-            OnLogMessage(LogSeverity.Trace, "JobRequestHandler", "Received JobRequest");
-            WorkerState state = (WorkerState)remote.Tag!;
+            WorkerStateObj state = (WorkerStateObj)remote.Tag!;
             if (!state.Idle)
             {
                 OnLogMessage(LogSeverity.Warning, "JobRequestHandler", "Worker requested job while not idle.");
@@ -322,8 +349,7 @@
             }
             else
             {
-                OnLogMessage(LogSeverity.Trace, "JobRequestHandler", "No jobs available, sending OutOfWork");
-                await remote.SendMessageRawAsync(new IPCMessage(MessageType.OutOfWork, 0)); 
+                await remote.SendLightMessageAsync(MessageType.OutOfWork);
                 state.Idle = true;
             }
         }

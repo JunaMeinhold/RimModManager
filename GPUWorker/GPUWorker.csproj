@@ -11,6 +11,10 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <PackageReference Include="Hexa.NET.Utilities" Version="2.2.5" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\WorkerShared\WorkerShared.csproj" />
 	</ItemGroup>
 

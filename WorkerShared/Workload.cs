@@ -5,7 +5,7 @@
     [ProtobufRecord]
     public partial struct JobPayload : IRecord
     {
-        public int Id;
+        public long Id;
         public string Source;
         public string Destination;
         public WorkloadFlags Flags;
@@ -13,7 +13,7 @@
         public int MinSize;
         public int MaxSize;
 
-        public JobPayload(int id, string source, string destination, WorkloadFlags flags, int format, int minSize, int maxSize)
+        public JobPayload(long id, string source, string destination, WorkloadFlags flags, int format, int minSize, int maxSize)
         {
             Id = id;
             Source = source;

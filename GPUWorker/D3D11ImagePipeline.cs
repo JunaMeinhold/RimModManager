@@ -5,6 +5,7 @@
     using Hexa.NET.DXGI;
     using Hexa.NET.KittyUI.D3D11;
     using Hexa.NET.KittyUI.Graphics.Imaging;
+    using Hexa.NET.Utilities;
     using HexaGen.Runtime.COM;
     using System;
     using System.Runtime.Versioning;
@@ -36,12 +37,14 @@
 
                 var metadata = texture.Metadata;
 
+                bool scaled = false;
                 var isQuad = metadata.Width == metadata.Height;
                 if ((workload.Flags & WorkloadFlags.Upscale) != 0 && isQuad)
                 {
                     if ((long)metadata.Width < workload.MinSize)
                     {
                         SwapImage(ref texture, texture.Resize(workload.MinSize, workload.MinSize, TexFilterFlags.Cubic));
+                        scaled = true;
                     }
                 }
 
@@ -50,6 +53,17 @@
                     if ((long)metadata.Width > workload.MaxSize)
                     {
                         SwapImage(ref texture, texture.Resize(workload.MaxSize, workload.MaxSize, TexFilterFlags.Cubic));
+                        scaled = true;
+                    }
+                }
+
+                if (!scaled)
+                {
+                    var alignedWidth = AlignmentHelper.AlignUp(metadata.Width, 4);
+                    var alignedHeight = AlignmentHelper.AlignUp(metadata.Height, 4);
+                    if (alignedWidth != metadata.Width || alignedHeight != metadata.Height)
+                    {
+                        SwapImage(ref texture, texture.Resize((int)alignedWidth, (int)alignedHeight, TexFilterFlags.Cubic));
                     }
                 }
 

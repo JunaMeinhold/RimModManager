@@ -12,45 +12,46 @@
         private readonly int batchSize;
         private readonly ConcurrentQueue<JobPayload> queue = new();
         private readonly CancellationTokenSource cancellationTokenSource = new();
-        private readonly Task pipelineTask;
+        private Task? pipelineTask;
         private readonly SemaphoreSlim workerSignal = new(0, int.MaxValue);
 
         private bool disposedValue;
         private bool outOfWork = true;
-        private WorkerState flags;
+        private WorkerState state = WorkerState.None;
 
         public ImagePipelineBase(WorkerIPCClient client, bool batched = true, int batchSize = 32)
         {
             this.client = client;
             this.batched = batched;
             this.batchSize = batchSize;
-            pipelineTask = Task.Factory.StartNew(async () => await PipelineTaskLoop(cancellationTokenSource.Token), TaskCreationOptions.LongRunning);
+      
             client.SetMessageHandler(MessageType.JobReady, JobReadyHandler);
             client.SetMessageHandler(MessageType.JobPayload, JobPayloadHandler);
             client.SetMessageHandler(MessageType.OutOfWork, OutOfWorkHandler);
-            if (batched)
-            {
-                client.SetMessageHandler(MessageType.JobPayloadBatch, JobPayloadBatchHandler);
-            }
-            client.StateFlags |= WorkerState.Idle;
-            flags = WorkerState.Idle;
+            client.SetMessageHandler(MessageType.JobPayloadBatch, JobPayloadBatchHandler);
+            pipelineTask = PipelineTaskLoop(cancellationTokenSource.Token);
         }
 
-        private bool TransitionState(WorkerState from, WorkerState to)
+        public async Task StartAsync()
         {
-            if (Interlocked.CompareExchange(ref flags, to, from) == from)
+            state = WorkerState.Idle;
+            await client.SetStateAsync(WorkerState.Idle);
+        }
+
+        private async Task<bool> TransitionState(WorkerState from, WorkerState to)
+        {
+            if (Interlocked.CompareExchange(ref state, to, from) == from)
             {
-                client.StateFlags = to;
+                await client.SetStateAsync(to);
                 return true;
             }
             return false;
         }
 
-        private Task OutOfWorkHandler(WorkerIPCClient client, IPCMessage message)
+        private async Task OutOfWorkHandler(WorkerIPCClient client, IPCMessage message)
         {
-            TransitionState(WorkerState.WaitingForJobRequest, WorkerState.Idle);
+            await TransitionState(WorkerState.WaitingForJobRequest, WorkerState.Idle);
             outOfWork = true;
-            return Task.CompletedTask;
         }
 
         private async Task JobPayloadBatchHandler(WorkerIPCClient client, IPCMessage message)
@@ -108,12 +109,12 @@
                 JobFinish job = jobs[0];
                 await client.SendMessageAsync(job, cancellationToken);
             }
-            TransitionState(WorkerState.Busy, WorkerState.Idle);
+            await TransitionState(WorkerState.Busy, WorkerState.Idle);
         }
 
         protected virtual async ValueTask RequestJob(CancellationToken cancellationToken)
         {
-            if (!TransitionState(WorkerState.Idle, WorkerState.WaitingForJobRequest))
+            if (!await TransitionState(WorkerState.Idle, WorkerState.WaitingForJobRequest))
             {
                 return;
             }
@@ -133,9 +134,9 @@
             }
         }
 
-        public async Task Enqueue(JobPayload payload)
+        private async Task Enqueue(JobPayload payload)
         {
-            if (!TransitionState(WorkerState.WaitingForJobRequest, WorkerState.Busy))
+            if (!await TransitionState(WorkerState.WaitingForJobRequest, WorkerState.Busy))
             {
                 await client.SendErrorAsync(ProtocolErrorType.OutOfOrderMessage, "Cannot enqueue job payload when worker is not waiting for job request.");
                 return;
@@ -145,9 +146,9 @@
             SignalWorker();
         }
 
-        public async Task EnqueueBatch(IEnumerable<JobPayload> batch)
+        private async Task EnqueueBatch(IEnumerable<JobPayload> batch)
         {
-            if (!TransitionState(WorkerState.WaitingForJobRequest, WorkerState.Busy))
+            if (!await TransitionState(WorkerState.WaitingForJobRequest, WorkerState.Busy))
             {
                 await client.SendErrorAsync(ProtocolErrorType.OutOfOrderMessage, "Cannot enqueue job payload batch when worker is not waiting for job request.");
                 return;

@@ -1,6 +1,5 @@
 ﻿namespace WorkerShared
 {
-    using Hexa.NET.Logging;
     using System;
     using System.Buffers;
     using System.Net.Sockets;
@@ -15,7 +14,7 @@
         private readonly Dictionary<MessageType, Func<WorkerClientRemote, IPCMessage, Task>> handlers = [];
         private Task? messageHandlerTask;
         private bool clientReady;
-        private readonly SemaphoreSlim clientReadyHandle = new(0);
+        private readonly SemaphoreSlim clientReadySignal = new(0);
         private Task? heartbeatTask;
         private bool disposedValue;
 
@@ -31,6 +30,7 @@
 
             SetHandler(MessageType.Heartbeat, HeartbeatHandler);
             SetHandler(MessageType.ClientReady, ClientReadyHandler);
+            SetHandler(MessageType.WorkerStateChanged, StateChangedHandler);
         }
 
         public TimeSpan Latency => latency;
@@ -47,17 +47,26 @@
 
         public bool ClientReady => clientReady;
 
+        public WorkerState State { get; private set; }
+
+        public bool HasHeartbeatMissed { get; private set; }
+
+        public event Func<WorkerClientRemote, WorkerState, Task>? StateChanged;
+
         public event Func<WorkerClientRemote, Heartbeat, Task>? HeartbeatReceived;
+
+        public event Func<WorkerClientRemote, Task>? HeartbeatMissed;
 
         public void SetHandler(MessageType type, Func<WorkerClientRemote, IPCMessage, Task> handler)
         {
             handlers[type] = handler;
         }
 
-        public async Task ReadyClient()
+        public async Task HandshakeAsync()
         {
             messageHandlerTask = Task.Factory.StartNew(async () => await HandleMessagesAsync(cancellationTokenSource.Token), TaskCreationOptions.LongRunning);
-            await SendMessageRawAsync(new(MessageType.ServerReady, 0));
+            await clientReadySignal.WaitAsync(cancellationTokenSource.Token);
+            await SendLightMessageAsync(MessageType.ServerReady);
         }
 
         private Task HeartbeatHandler(WorkerClientRemote remote, IPCMessage message)
@@ -73,7 +82,7 @@
         private async Task ClientReadyHandler(WorkerClientRemote remote, IPCMessage message)
         {
             clientReady = true;
-            clientReadyHandle.Release();
+            clientReadySignal.Release();
             heartbeatTask = Task.Factory.StartNew(async () => await HandleHeartbeat(cancellationTokenSource.Token));
 
             if (Ready != null)
@@ -92,11 +101,29 @@
 
                 if (lastReceivedHeartbeat < heartbeat.Timestamp)
                 {
-                    LoggerFactory.General.Warn("Worker missed Heartbeat, Terminating...");
-                    Terminate();
+                    HasHeartbeatMissed = true;
+                    if (HeartbeatMissed != null)
+                    {
+                        await HeartbeatMissed.Invoke(this);
+                    }
+                }
+                else
+                {
+                    HasHeartbeatMissed = false;
                 }
             }
         }
+
+        private async Task StateChangedHandler(WorkerClientRemote remote, IPCMessage message)
+        {
+            WorkerStateChanged stateChanged = message.ReadDataAs<WorkerStateChanged>();
+            State = stateChanged.State;
+            if (StateChanged != null)
+            {
+                await StateChanged.Invoke(this, State);
+            }
+        }
+
 
         public void Terminate()
         {
@@ -106,7 +133,7 @@
 
         public async void Shutdown()
         {
-            await SendMessageRawAsync(new IPCMessage(MessageType.Shutdown, 0));
+            await SendLightMessageAsync(MessageType.Shutdown);
             Dispose();
             Disconnected?.Invoke(this, false);
         }
@@ -117,7 +144,18 @@
             {
                 try
                 {
-                    var message = await ReceiveMessageAsync(cancellationToken);
+                    await stream.ReadExactlyAsync(messageHeaderBuffer, cancellationToken);
+                    IPCMessage message = default;
+                    message.Read(messageHeaderBuffer.Span);
+                    if (message.Length > messageBuffer.Length)
+                    {
+                        messageBuffer = new byte[message.Length];
+                    }
+                    message.Data = messageBuffer[..(int)message.Length];
+                    if (message.Length > 0)
+                    {
+                        await stream.ReadExactlyAsync(message.Data, cancellationToken);
+                    }
 
                     if (handlers.TryGetValue(message.Type, out var handler))
                     {
@@ -141,23 +179,6 @@
         private readonly Memory<byte> messageHeaderBuffer = new byte[IPCMessage.HeaderSize];
         private Memory<byte> messageBuffer = new byte[1024];
 
-        private async Task<IPCMessage> ReceiveMessageAsync(CancellationToken cancellationToken)
-        {
-            await stream.ReadExactlyAsync(messageHeaderBuffer, cancellationToken);
-            IPCMessage message = default;
-            message.Read(messageHeaderBuffer.Span);
-            if (message.Length > messageBuffer.Length)
-            {
-                messageBuffer = new byte[message.Length];
-            }
-            message.Data = messageBuffer[..(int)message.Length];
-            if (message.Length > 0)
-            {
-                await stream.ReadExactlyAsync(message.Data, cancellationToken);
-            }
-
-            return message;
-        }
         public async ValueTask SendErrorAsync(ProtocolErrorType errorType, string? errorMessage = null)
         {
             ProtocolError error = new(errorType, errorMessage);
@@ -166,21 +187,21 @@
 
         public async ValueTask SendLightMessageAsync(MessageType type, CancellationToken cancellationToken = default)
         {
-            await SendMessageRawAsync(new(type, 0), cancellationToken);
+            await SendMessageAsync(new LightIPCMessage(type), cancellationToken);
         }
 
-        public async Task SendMessageAsync<T>(T record, CancellationToken cancellationToken = default) where T : IRecord
+        public async ValueTask SendMessageAsync<T>(T record, CancellationToken cancellationToken = default) where T : IRecord
         {
             var length = record.Length;
-            var buffer = ArrayPool<byte>.Shared.Rent(length);
+            var totalLength = IPCMessage.HeaderSize + length;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalLength);
             try
             {
-                record.Write(buffer);
-                IPCMessage message = new(record.Type, (uint)length)
-                {
-                    Data = buffer.AsMemory()[..length]
-                };
-                await SendMessageRawAsync(message, cancellationToken);
+                var span = buffer.AsSpan();
+                IPCMessage message = new(record.Type, (uint)length);
+                message.Write(span);
+                record.Write(span[IPCMessage.HeaderSize..]);
+                await stream.WriteAsync(buffer.AsMemory(0, totalLength), cancellationToken);
             }
             finally
             {
@@ -188,22 +209,9 @@
             }
         }
 
-        public async Task SendMessageRawAsync(IPCMessage message, CancellationToken cancellationToken = default)
+        public async ValueTask SendRawAsync(ReadOnlyMemory<byte> memory, CancellationToken cancellationToken = default)
         {
-            await clientReadyHandle.WaitAsync(cancellationToken);
-            var buffer = ArrayPool<byte>.Shared.Rent(IPCMessage.HeaderSize);
-            try
-            {
-                Memory<byte> headerBuffer = buffer.AsMemory()[..IPCMessage.HeaderSize];
-                message.Write(headerBuffer.Span);
-                await stream.WriteAsync(headerBuffer, cancellationToken);
-                await stream.WriteAsync(message.Data, cancellationToken);
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-                clientReadyHandle.Release();
-            }
+            await stream.WriteAsync(memory, cancellationToken);
         }
 
         public void Dispose()
@@ -211,7 +219,7 @@
             if (!disposedValue)
             {
                 cancellationTokenSource.Cancel();
-                clientReadyHandle.Dispose();
+                clientReadySignal.Dispose();
                 heartbeatTask?.Wait();
                 messageHandlerTask?.Wait();
                 stream.Dispose();

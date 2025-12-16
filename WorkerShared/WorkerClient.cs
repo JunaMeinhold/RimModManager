@@ -13,6 +13,7 @@ namespace WorkerShared
         private readonly Dictionary<MessageType, Func<WorkerIPCClient, IPCMessage, Task>> handlers = [];
         private Task messageHandlerTask;
         private bool disposedValue;
+        private readonly SemaphoreSlim serverReadySignal = new(0);
 
         private TimeSpan latency;
 
@@ -28,24 +29,39 @@ namespace WorkerShared
 
         public TimeSpan Latency => latency;
 
-        public WorkerState StateFlags { get; set; }
+        public WorkerState State { get; private set; }
 
-        public async Task StartProcessingAsync()
+        public async Task SetStateAsync(WorkerState newState)
+        {
+            State = newState;
+            WorkerStateChanged stateChanged = new(newState);
+            await SendMessageAsync(stateChanged);
+        }
+
+        public async Task HandshakeAsync()
         {
             client = new(masterAddress, masterPort);
             stream = client.GetStream();
 
             SetMessageHandler(MessageType.Heartbeat, HeartbeatHandler);
             SetMessageHandler(MessageType.Shutdown, ShutdownHandler);
+            SetMessageHandler(MessageType.ServerReady, ServerReadyHandler);
 
             messageHandlerTask = Task.Factory.StartNew(async () => await HandleMessagesAsync(cancellationTokenSource.Token), cancellationTokenSource.Token);
 
-            await SendMessageRawAsync(new IPCMessage(MessageType.ClientReady, 0));
+            await SendLightMessageAsync(MessageType.ClientReady);
+            await serverReadySignal.WaitAsync();
+        }
 
-            while (!cancellationTokenSource.IsCancellationRequested)
-            {
-                Thread.Sleep(1);
-            }
+        private Task ServerReadyHandler(WorkerIPCClient client, IPCMessage message)
+        {
+            serverReadySignal.Release();
+            return Task.CompletedTask;
+        }
+
+        public async Task WaitForExit() 
+        {
+            await Task.Delay(-1, cancellationTokenSource.Token);
         }
 
         private Task ShutdownHandler(WorkerIPCClient client, IPCMessage message)
@@ -59,7 +75,7 @@ namespace WorkerShared
             var received = message.ReadDataAs<Heartbeat>();
             long now = DateTime.UtcNow.Ticks;
             latency = TimeSpan.FromTicks(now - received.Timestamp);
-            Heartbeat heartbeat = new(now, StateFlags);
+            Heartbeat heartbeat = new(now, State);
             await client.SendMessageAsync(heartbeat);
             Console.WriteLine($"Heartbeat: Latency: {latency.Milliseconds}ms, {received.Timestamp}");
         }
@@ -121,37 +137,21 @@ namespace WorkerShared
 
         public async ValueTask SendLightMessageAsync(MessageType type, CancellationToken cancellationToken = default)
         {
-            await SendMessageRawAsync(new(type, 0), cancellationToken);
+            await SendMessageAsync(new LightIPCMessage(type), cancellationToken);
         }
 
         public async ValueTask SendMessageAsync<T>(T record, CancellationToken cancellationToken = default) where T : IRecord
         {
             var length = record.Length;
-            var buffer = ArrayPool<byte>.Shared.Rent(length);
+            var totalLength = IPCMessage.HeaderSize + length;
+            var buffer = ArrayPool<byte>.Shared.Rent(totalLength);
             try
             {
-                record.Write(buffer);
-                IPCMessage message = new(record.Type, (uint)length)
-                {
-                    Data = buffer.AsMemory()[..length]
-                };
-                await SendMessageRawAsync(message, cancellationToken);
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
-
-        public async ValueTask SendMessageRawAsync(IPCMessage message, CancellationToken cancellationToken = default)
-        {
-            var buffer = ArrayPool<byte>.Shared.Rent(IPCMessage.HeaderSize);
-            try
-            {
-                Memory<byte> headerBuffer = buffer.AsMemory()[..IPCMessage.HeaderSize];
-                message.Write(headerBuffer.Span);
-                await stream.WriteAsync(headerBuffer, cancellationToken);
-                await stream.WriteAsync(message.Data, cancellationToken);
+                var span = buffer.AsSpan();
+                IPCMessage message = new(record.Type, (uint)length);
+                message.Write(span);
+                record.Write(span[IPCMessage.HeaderSize..]);
+                await stream.WriteAsync(buffer.AsMemory(0, totalLength), cancellationToken);
             }
             finally
             {
