@@ -30,9 +30,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Hexa.NET.KittyUI" Version="1.1.13" />
+		<PackageReference Include="Hexa.NET.KittyUI" Version="1.1.14" />
 
 		<PackageReference Include="LibGit2Sharp" Version="0.31.0" />
+
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 
 		<!-- BUILD_STEAM_BROWSER
 		<PackageReference Include="Hexa.NET.KittyUI.WebView" Version="1.0.4" />

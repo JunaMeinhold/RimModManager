@@ -1,4 +1,5 @@
-﻿using Hexa.NET.KittyUI;
+﻿using Hexa.NET.ImGui;
+using Hexa.NET.KittyUI;
 using Hexa.NET.KittyUI.Debugging;
 using Hexa.NET.KittyUI.UI;
 using Hexa.NET.Logging;
@@ -6,13 +7,19 @@ using RimModManager;
 using System.Numerics;
 using System.Reflection;
 
-
 AppBuilder.Create()
     .AddWindow<MainWindow>()
     .AddTitleBar<TitleBar>()
     .EnableDebugTools(true)
     .SetLogFolder(Paths.LogFolder)
     .SetTitle("Rim Mod Manager")
+    .ImGuiConfigure((ctx, io) =>
+    {
+        unsafe
+        {
+            io.IniFilename = Paths.ImGuiIniFile;
+        }
+    })
     .AddFont(builder =>
     {
         var current = Assembly.GetExecutingAssembly();
